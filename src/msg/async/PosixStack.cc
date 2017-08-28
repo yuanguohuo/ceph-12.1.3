@@ -51,6 +51,10 @@ class PosixConnectedSocketImpl final : public ConnectedSocketImpl {
   explicit PosixConnectedSocketImpl(NetHandler &h, const entity_addr_t &sa, int f, bool connected)
       : handler(h), _fd(f), sa(sa), connected(connected) {}
 
+  //Yuanguo: 
+  // return 1:  connected;
+  // return 0:  in progress;
+  // return <0: error;
   int is_connected() override {
     if (connected)
       return 1;
@@ -62,7 +66,7 @@ class PosixConnectedSocketImpl final : public ConnectedSocketImpl {
     } else if (r < 0) {
       return r;
     } else {
-      return 0;
+      return 0; //Yuanguo: r==1, connection is in progress (EINPROGRESS||EALREADY), see NetHandler::reconnect
     }
   }
 

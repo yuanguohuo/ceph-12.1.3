@@ -869,6 +869,18 @@ ssize_t AsyncConnection::_process_connection()
       }
 
     case STATE_CONNECTING:
+      //Yuanguo
+      //  Client(connecting)                                              Server(listening)
+      //        A                                                                 B 
+      //        |                                                                 |
+      //        |     -----------::connect()-------------------------------->     |
+      //        |                                                                 |
+      //        |     -----------"ceph v027"-------------------------------->     | 
+      //        |     <----------"ceph v027" AddrB AddrA---------------------     |
+      //        |     -----------AddrA-------------------------------------->     |
+      //        |                                                                 |
+      //        |     ---connect_msg(global_seq, connect_seq, authorizer)---->    |
+      //        |     <--connect_reply(global_seq, connect_seq, authorizer)---    | 
       {
         assert(!policy.server);
 
@@ -901,6 +913,10 @@ ssize_t AsyncConnection::_process_connection()
 
     case STATE_CONNECTING_RE:
       {
+        //Yuanguo: In STATE_CONNECTING, connection was made (worker->connect, PosixWorker::connect--> ... --> 
+        //     NetHandler::generic_connect-->::connect). Since the connection is nonblocking, the connection might
+        //     have not been completed now (still in progress now).
+        //PosixConnectedSocketImpl::is_connected(),  return <0: error;  return 0: in progress;  return 1: connected;
         r = cs.is_connected();
         if (r < 0) {
           ldout(async_msgr->cct, 1) << __func__ << " reconnect failed " << dendl;
@@ -912,10 +928,15 @@ ssize_t AsyncConnection::_process_connection()
         } else if (r == 0) {
           ldout(async_msgr->cct, 10) << __func__ << " nonblock connect inprogress" << dendl;
           if (async_msgr->get_stack()->nonblock_connect_need_writable_event())
+
+            //Yuanguo: EVENT_WRITABLE means socket-connection is completed (see 'man connect'). By then, we don't 
+            //need to write anything but need to continue current messenger-connection process, so read_handler is 
+            //used to handle the EVENT_WRITABLE, not write_handler;
             center->create_file_event(cs.fd(), EVENT_WRITABLE, read_handler);
           break;
         }
 
+        //Yuanguo: socket-connection has been completed and we've got EVENT_WRITABLE, so the event becomes useless;
         center->delete_file_event(cs.fd(), EVENT_WRITABLE);
         ldout(async_msgr->cct, 10) << __func__ << " connect successfully, ready to send banner" << dendl;
 
@@ -1214,15 +1235,27 @@ ssize_t AsyncConnection::_process_connection()
       }
 
     case STATE_ACCEPTING:
+      //Yuanguo
+      //  Client(connecting)                                              Server(listening)
+      //        A                                                                 B 
+      //        |                                                                 |
+      //        |     -----------::connect()-------------------------------->     |
+      //        |                                                                 |
+      //        |     -----------"ceph v027"-------------------------------->     | 
+      //        |     <----------"ceph v027" AddrB AddrA---------------------     |
+      //        |     -----------AddrA-------------------------------------->     |
+      //        |                                                                 |
+      //        |     ---connect_msg(global_seq, connect_seq, authorizer)---->    |
+      //        |     <--connect_reply(global_seq, connect_seq, authorizer)---    | 
       {
         bufferlist bl;
         center->create_file_event(cs.fd(), EVENT_READABLE, read_handler);
 
         bl.append(CEPH_BANNER, strlen(CEPH_BANNER));
 
-        ::encode(async_msgr->get_myaddr(), bl, 0); // legacy
+        ::encode(async_msgr->get_myaddr(), bl, 0); // legacy   Yuanguo: AddrB
         port = async_msgr->get_myaddr().get_port();
-        ::encode(socket_addr, bl, 0); // legacy
+        ::encode(socket_addr, bl, 0); // legacy                Yuanguo: AddrA
         ldout(async_msgr->cct, 1) << __func__ << " sd=" << cs.fd() << " " << socket_addr << dendl;
 
         r = try_send(bl);
