@@ -237,6 +237,10 @@ ssize_t AsyncConnection::_try_send(bool more)
 //
 // return the remaining bytes, 0 means this buffer is finished
 // else return < 0 means error
+//
+// Yuanguo: for a read, if not finished this time, p should point to the same 
+//   buffer for the next call, and state_offset records the offset (how many
+//   bytes have been read); When a read is finished, state_offset is reset to 0;
 ssize_t AsyncConnection::read_until(unsigned len, char *p)
 {
   ldout(async_msgr->cct, 25) << __func__ << " len is " << len << " state_offset is "
@@ -275,13 +279,13 @@ ssize_t AsyncConnection::read_until(unsigned len, char *p)
       if (r < 0) {
         ldout(async_msgr->cct, 1) << __func__ << " read failed" << dendl;
         return -1;
-      } else if (r == static_cast<int>(left)) {
+      } else if (r == static_cast<int>(left)) { //Yuanguo: read is finished, reset state_offset;
         state_offset = 0;
         return 0;
       }
       state_offset += r;
       left -= r;
-    } while (r > 0);
+    } while (r > 0); //Yuanguo: loop exits when r==0, meaning ::read returned EAGAIN; 
   } else {
     do {
       r = read_bulk(recv_buf+recv_end, recv_max_prefetch);
@@ -332,6 +336,8 @@ void AsyncConnection::process()
   auto recv_start_time = ceph::mono_clock::now();
   do {
     ldout(async_msgr->cct, 20) << __func__ << " prev state is " << get_state_name(prev_state) << dendl;
+    //Yuanguo: the do-while loop ends when prev_state != state; so the loop won't end as long as
+    //    'state' changes in current round ...
     prev_state = state;
     switch (state) {
       case STATE_OPEN:
@@ -342,6 +348,12 @@ void AsyncConnection::process()
             ldout(async_msgr->cct, 1) << __func__ << " read tag failed" << dendl;
             goto fail;
           } else if (r > 0) {
+            //Yuanguo: r>0 means read is not finished (::read returned EAGAIN); since 'state' is not 
+            //    changed, the loop will terminate;
+            //    When data available next time, EventCenter will get the event (by epoll or the like),
+            //    read_handler is called, which in turn calls this function; since 'state' is still 
+            //    STATE_OPEN, the read is continued;
+            //    The read_until() call at other cases in this function is the similar as here.
             break;
           }
 
@@ -913,7 +925,7 @@ ssize_t AsyncConnection::_process_connection()
 
     case STATE_CONNECTING_RE:
       {
-        //Yuanguo: In STATE_CONNECTING, connection was made (worker->connect, PosixWorker::connect--> ... --> 
+        //Yuanguo: In STATE_CONNECTING above, connection was made (worker->connect, PosixWorker::connect--> ... --> 
         //     NetHandler::generic_connect-->::connect). Since the connection is nonblocking, the connection might
         //     have not been completed now (still in progress now).
         //PosixConnectedSocketImpl::is_connected(),  return <0: error;  return 0: in progress;  return 1: connected;
@@ -942,7 +954,7 @@ ssize_t AsyncConnection::_process_connection()
 
         bufferlist bl;
         bl.append(CEPH_BANNER, strlen(CEPH_BANNER));
-        r = try_send(bl);
+        r = try_send(bl); //Yuanguo: r is the remaining bytes that has not been sent!
         if (r == 0) {
           state = STATE_CONNECTING_WAIT_BANNER_AND_IDENTIFY;
           ldout(async_msgr->cct, 10) << __func__ << " connect write banner done: "
