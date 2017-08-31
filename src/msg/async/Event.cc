@@ -203,7 +203,9 @@ void EventCenter::set_owner()
 
 int EventCenter::create_file_event(int fd, int mask, EventCallbackRef ctxt)
 {
+  //Yuanguo: create_file_event can only be called by the Worker (thread) owning the event center;
   assert(in_thread());
+
   int r = 0;
   if (fd >= nevent) {
     int new_size = nevent << 2;
@@ -248,6 +250,7 @@ int EventCenter::create_file_event(int fd, int mask, EventCallbackRef ctxt)
 
 void EventCenter::delete_file_event(int fd, int mask)
 {
+  //Yuanguo: delete_file_event can only be called by the Worker (thread) owning the event center;
   assert(in_thread() && fd >= 0);
   if (fd >= nevent) {
     ldout(cct, 1) << __func__ << " delete event fd=" << fd << " is equal or greater than nevent=" << nevent
@@ -280,6 +283,7 @@ void EventCenter::delete_file_event(int fd, int mask)
 
 uint64_t EventCenter::create_time_event(uint64_t microseconds, EventCallbackRef ctxt)
 {
+  //Yuanguo: create_time_event can only be called by the Worker (thread) owning the event center;
   assert(in_thread());
   uint64_t id = time_event_next_id++;
 
@@ -297,6 +301,7 @@ uint64_t EventCenter::create_time_event(uint64_t microseconds, EventCallbackRef 
 
 void EventCenter::delete_time_event(uint64_t id)
 {
+  //Yuanguo: delete_time_event can only be called by the Worker (thread) owning the event center;
   assert(in_thread());
   ldout(cct, 30) << __func__ << " id=" << id << dendl;
   if (id >= time_event_next_id || id == 0)
@@ -363,7 +368,11 @@ int EventCenter::process_events(int timeout_microseconds,  ceph::timespan *worki
   auto now = clock_type::now();
 
   auto it = time_events.begin();
+
+  //Yuanguo: if there is no external events or poller, we 'may' block waiting for file events (epoll_wait);
+  //   but, just 'may', if we really block, and how long we will block is dependent on time events. See it below.
   bool blocking = pollers.empty() && !external_num_events.load();
+
   // If exists external events or poller, don't block
   if (!blocking) {
     if (it != time_events.end() && now >= it->first)
@@ -371,17 +380,22 @@ int EventCenter::process_events(int timeout_microseconds,  ceph::timespan *worki
     tv.tv_sec = 0;
     tv.tv_usec = 0;
   } else {
+    //Yuanguo: although there is no external events or poller, if we really block, and how long we will block is
+    //   dependent on: if there is any time events, and how urgent they are.
     clock_type::time_point shortest;
     shortest = now + std::chrono::microseconds(timeout_microseconds); 
 
     if (it != time_events.end() && shortest >= it->first) {
+      //Yuanguo: we plan to block for timeout_microseconds, but there are time event before now+timeout_microseconds;
       ldout(cct, 30) << __func__ << " shortest is " << shortest << " it->first is " << it->first << dendl;
       shortest = it->first;
       trigger_time = true;
       if (shortest > now) {
+        //Yuanguo: the nearest time event is in futrue, so we can block until that time;
         timeout_microseconds = std::chrono::duration_cast<std::chrono::microseconds>(
             shortest - now).count();
       } else {
+        //Yuanguo: the nearest time event is in past, so don't block and hurry up!
         shortest = now;
         timeout_microseconds = 0;
       }

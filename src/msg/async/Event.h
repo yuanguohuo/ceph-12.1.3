@@ -228,6 +228,9 @@ class EventCenter {
       lock.lock();
       cond.notify_all();
       done = true;
+      //Yuanguo:   setting 'nonwait' to true, the thread who fired this event didn't plan 
+      //    to call wait() func of this event; thus the event object can be recycled once
+      //    it's done;
       bool del = nonwait;
       lock.unlock();
       if (del)
