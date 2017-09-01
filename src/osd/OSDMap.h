@@ -352,6 +352,36 @@ struct PGTempMap {
 WRITE_CLASS_ENCODER(PGTempMap)
 
 /** OSDMap
+ *
+ * Yuanguo: an example of printed osdmap:
+ *
+ * [root@node3 ~]# ceph --cluster mycluster osd getmap  -o osdmap
+ *     got osdmap epoch 845
+ * [root@node3 ~]# osdmaptool --print osdmap
+ *     osdmaptool: osdmap file 'osdmap'
+ *     epoch 845
+ *     fsid 116d4de8-fd14-491f-811f-c1bdd8fac141
+ *     created 2017-08-17 07:10:59.100920
+ *     modified 2017-09-01 03:21:01.281654
+ *     flags sortbitwise,recovery_deletes
+ *     crush_version 8
+ *     full_ratio 0.95
+ *     backfillfull_ratio 0.9
+ *     nearfull_ratio 0.85
+ *     require_min_compat_client jewel
+ *     min_compat_client jewel
+ *     require_osd_release luminous
+ *     
+ *     pool 6 'testpool-1' replicated size 3 min_size 2 crush_rule 0 object_hash rjenkins pg_num 20 pgp_num 20 last_change 824 flags hashpspool stripe_width 0
+ *     pool 7 'testpool-2' replicated size 3 min_size 2 crush_rule 0 object_hash rjenkins pg_num 30 pgp_num 30 last_change 827 flags hashpspool stripe_width 0
+ *     pool 8 'testpool-3' replicated size 3 min_size 2 crush_rule 0 object_hash rjenkins pg_num 50 pgp_num 50 last_change 831 flags hashpspool stripe_width 0
+ *     pool 9 'testpool-4' erasure    size 3 min_size 3 crush_rule 1 object_hash rjenkins pg_num 20 pgp_num 20 last_change 843 flags hashpspool stripe_width 8192
+ *     
+ *     max_osd 3
+ *     osd.0 up   in  weight 1 up_from 840 up_thru 843 down_at 838 last_clean_interval [803,838) 192.168.100.131:6800/3710 192.168.73.131:6802/1003710 192.168.73.131:6803/1003710 192.168.100.131:6802/1003710 exists,up 6f8dd6b4-5204-48d7-8409-7e93992e3b62
+ *     osd.1 up   in  weight 1 up_from 836 up_thru 843 down_at 834 last_clean_interval [801,835) 192.168.100.132:6800/3774 192.168.73.132:6803/1003774 192.168.73.132:6804/1003774 192.168.100.132:6803/1003774 exists,up 0529f027-828a-4f92-882f-aec827f35ab8
+ *     osd.2 up   in  weight 1 up_from 839 up_thru 843 down_at 838 last_clean_interval [764,838) 192.168.100.133:6800/2231 192.168.73.133:6802/1002231 192.168.73.133:6803/1002231 192.168.100.133:6802/1002231 exists,up 03cf8129-5d48-47af-a874-812ddc21d467
+ *
  */
 class OSDMap {
 public:
