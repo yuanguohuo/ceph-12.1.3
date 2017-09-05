@@ -238,6 +238,7 @@ int OSDMap::Incremental::propagate_snaps_to_tiers(CephContext *cct,
 
 bool OSDMap::subtree_is_down(int id, set<int> *down_cache) const
 {
+  //Yuanguo: id of OSD is 0 or positive; ids of other types of buckets (host, rack and etc) are negative;
   if (id >= 0)
     return is_down(id);
 
@@ -259,6 +260,10 @@ bool OSDMap::subtree_is_down(int id, set<int> *down_cache) const
   return true;
 }
 
+//Yuanguo: examples: 
+//    given an osd, figure out if its containing host is down or not;
+//    given a host, figure out if its containning rack is down or not;
+//    ......
 bool OSDMap::containing_subtree_is_down(CephContext *cct, int id, int subtree_type, set<int> *down_cache) const
 {
   // use a stack-local down_cache if we didn't get one from the
@@ -306,6 +311,7 @@ bool OSDMap::subtree_type_is_down(
   set<int> *subtree_up,
   unordered_map<int, set<int> > *subtree_type_down) const
 {
+  //Yuanguo: OSD, the termination of the recursion;
   if (id >= 0) {
     bool is_down_ret = is_down(id);
     if (!is_out(id)) {
@@ -323,6 +329,7 @@ bool OSDMap::subtree_type_is_down(
     return true;
   }
 
+  //Yuanguo: other bucket types, recurse down till OSD;
   list<int> children;
   crush->get_children(id, &children);
   for (const auto &child : children) {
@@ -1444,6 +1451,8 @@ uint64_t OSDMap::get_up_osd_features() const
   return cached_up_osd_features;
 }
 
+//Yuanguo: if a member of 'o' equals to the member of 'n', then
+//  let them point to the same copy;
 void OSDMap::dedup(const OSDMap *o, OSDMap *n)
 {
   if (o->epoch == n->epoch)
