@@ -2024,9 +2024,15 @@ void OSDMap::_apply_primary_affinity(ps_t seed,
 			seed, o) >> 16) >= a) {
       // we chose not to use this primary.  note it anyway as a
       // fallback in case we don't pick anyone else, but keep looking.
+      // Yuanguo: >=a means that affinity check missed, thus, we should 
+      //     not chose i. But if no one has been chosen (pos<0), we chose 
+      //     i temporarily and keep looking: it is not a good choice, but 
+      //     in case of there is no other choices, chose it just for now;
       if (pos < 0)
 	pos = i;
     } else {
+      // Yuanguo: <a means that affinity check hit, thus, we should chose i.
+      //     then, chose i and stop looking; 
       pos = i;
       break;
     }
@@ -2127,13 +2133,17 @@ void OSDMap::_pg_to_up_acting_osds(
       *acting_primary = -1;
     return;
   }
+
+  //Yuanguo: if cluster is rebuilding, acting set may be different from up
+  //set; else, acting set = up set;
+
   vector<int> raw;
   vector<int> _up;
   vector<int> _acting;
   int _up_primary;
   int _acting_primary;
   ps_t pps;
-  _get_temp_osds(*pool, pg, &_acting, &_acting_primary);
+  _get_temp_osds(*pool, pg, &_acting, &_acting_primary); //Yuanguo: got if cluster is rebuilding
   if (_acting.empty() || up || up_primary) {
     _pg_to_raw_osds(*pool, pg, &raw, &pps);
     _apply_upmap(*pool, pg, &raw);
