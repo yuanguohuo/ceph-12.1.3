@@ -2143,7 +2143,12 @@ void OSDMap::_pg_to_up_acting_osds(
   int _up_primary;
   int _acting_primary;
   ps_t pps;
-  _get_temp_osds(*pool, pg, &_acting, &_acting_primary); //Yuanguo: got if cluster is rebuilding
+
+  //Yuanguo: if cluster is rebuilding, pg_temp and primary_temp may be not
+  //empty and we may get _acting and _acting_primary; otherwise, pg_temp and 
+  //primary_temp are both empty, thus we cannot get _acting and _acting_primary;
+  _get_temp_osds(*pool, pg, &_acting, &_acting_primary);
+
   if (_acting.empty() || up || up_primary) {
     _pg_to_raw_osds(*pool, pg, &raw, &pps);
     _apply_upmap(*pool, pg, &raw);
