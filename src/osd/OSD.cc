@@ -1099,6 +1099,7 @@ epoch_t OSDService::get_peer_epoch(int peer)
 
 epoch_t OSDService::note_peer_epoch(int peer, epoch_t e)
 {
+  //Yuanguo: record the max epoch each peer has ever claimed to have (the peer has used this epoch in heartbeat for example);
   Mutex::Locker l(peer_map_epoch_lock);
   map<int,epoch_t>::iterator p = peer_map_epoch.find(peer);
   if (p != peer_map_epoch.end()) {
@@ -1222,7 +1223,7 @@ void OSDService::share_map_peer(int peer, Connection *con, OSDMapRef map)
   // send map?
   epoch_t pe = get_peer_epoch(peer);
   if (pe) {
-    if (pe < map->get_epoch()) {
+    if (pe < map->get_epoch()) { //Yuanguo: peer is osdmap is older than mine, thus, send it the incremental;
       send_incremental_map(pe, con, map);
       note_peer_epoch(peer, map->get_epoch());
     } else
@@ -4620,12 +4621,12 @@ void OSD::maybe_update_heartbeat_peers()
 
   if (is_waiting_for_healthy()) {
     utime_t now = ceph_clock_now();
-    if (last_heartbeat_resample == utime_t()) {
+    if (last_heartbeat_resample == utime_t()) { //Yuanguo: havn't calculated heartbeat peers yet!
       last_heartbeat_resample = now;
       heartbeat_set_peers_need_update();
-    } else if (!heartbeat_peers_need_update()) {
+    } else if (!heartbeat_peers_need_update()) { //Yuanguo: have calculated heartbeat peers,
       utime_t dur = now - last_heartbeat_resample;
-      if (dur > cct->_conf->osd_heartbeat_grace) {
+      if (dur > cct->_conf->osd_heartbeat_grace) { //Yuanguo: but the last calculation is too old from now;
 	dout(10) << "maybe_update_heartbeat_peers forcing update after " << dur << " seconds" << dendl;
 	heartbeat_set_peers_need_update();
 	last_heartbeat_resample = now;
@@ -4634,8 +4635,11 @@ void OSD::maybe_update_heartbeat_peers()
     }
   }
 
-  if (!heartbeat_peers_need_update())
+  if (!heartbeat_peers_need_update()) //Yuanguo: have calculated heartbeat peers and the last calculation is NOT too old;
     return;
+
+  //Yuanguo: we havn't calculated heartbeat peers yet or the last calculation is too old; start calculate now;
+
   heartbeat_clear_peers_need_update();
 
   Mutex::Locker l(heartbeat_lock);
@@ -4649,6 +4653,11 @@ void OSD::maybe_update_heartbeat_peers()
     for (ceph::unordered_map<spg_t, PG*>::iterator i = pg_map.begin();
 	 i != pg_map.end();
 	 ++i) {
+      //Yuanguo: 
+      //   1. find out the OSDs who share PG with me ('this' OSD), and add them into my heartbeat_peers;
+      //   2. find out the OSDs who are probe targets of my ('this' OSD) PGs, and add them into my heartbeat_peers;
+      //   Note: these peers cannot be removed (in the case that there are too many peers, we may remove some, but not
+      //         these);
       PG *pg = i->second;
       pg->heartbeat_peer_lock.Lock();
       dout(20) << i->first << " heartbeat_peers " << pg->heartbeat_peers << dendl;
@@ -4667,11 +4676,11 @@ void OSD::maybe_update_heartbeat_peers()
   }
 
   // include next and previous up osds to ensure we have a fully-connected set
-  set<int> want, extras;
-  int next = osdmap->get_next_up_osd_after(whoami);
+  set<int> want, extras;   //Yuanguo: 'want' is the set should not be removed; 'extra' is the set that can be removed;
+  int next = osdmap->get_next_up_osd_after(whoami); //Yuanguo: the next up OSD after me ('this' OSD);
   if (next >= 0)
     want.insert(next);
-  int prev = osdmap->get_previous_up_osd_before(whoami);
+  int prev = osdmap->get_previous_up_osd_before(whoami); //Yuanguo: the previous up OSD before me;
   if (prev >= 0 && prev != next)
     want.insert(prev);
 
@@ -4792,6 +4801,7 @@ void OSD::handle_osd_ping(MOSDPing *m)
 	}
       }
 
+      //Yuanguo: check is there any hang-up thread. Is this related to heartbeat?
       if (!cct->get_heartbeat_map()->is_healthy()) {
 	dout(10) << "internal heartbeat not healthy, dropping ping request" << dendl;
 	break;
@@ -4804,15 +4814,15 @@ void OSD::handle_osd_ping(MOSDPing *m)
       m->get_connection()->send_message(r);
 
       if (curmap->is_up(from)) {
-	service.note_peer_epoch(from, m->map_epoch);
+	service.note_peer_epoch(from, m->map_epoch); //Yuanguo: record the max epoch that the peer ever used;
 	if (is_active()) {
 	  ConnectionRef con = service.get_con_osd_cluster(from, curmap->get_epoch());
 	  if (con) {
-	    service.share_map_peer(from, con.get());
+	    service.share_map_peer(from, con.get()); //Yuanguo: if epoch of peer is less than mine, send it the incremental osdmap;
 	  }
 	}
       } else if (!curmap->exists(from) ||
-		 curmap->get_down_at(from) > m->map_epoch) {
+		 curmap->get_down_at(from) > m->map_epoch) { //Yuanguo: as far as I (this OSD) know, the peer is dead;
 	// tell them they have died
 	Message *r = new MOSDPing(monc->get_fsid(),
 				  curmap->get_epoch(),
@@ -4873,11 +4883,11 @@ void OSD::handle_osd_ping(MOSDPing *m)
 
       if (m->map_epoch &&
 	  curmap->is_up(from)) {
-	service.note_peer_epoch(from, m->map_epoch);
+	service.note_peer_epoch(from, m->map_epoch); //Yuanguo: record the max epoch that the peer ever used;
 	if (is_active()) {
 	  ConnectionRef con = service.get_con_osd_cluster(from, curmap->get_epoch());
 	  if (con) {
-	    service.share_map_peer(from, con.get());
+	    service.share_map_peer(from, con.get()); //Yuanguo: if epoch of peer is less than mine, send it the incremental osdmap;
 	  }
 	}
       }
@@ -4964,7 +4974,8 @@ void OSD::heartbeat()
 
   // get CPU load avg
   double loadavgs[1];
-  int n_samples = 86400 / cct->_conf->osd_heartbeat_interval;
+  int n_samples = 86400 / cct->_conf->osd_heartbeat_interval; //Yuanguo: 86400 = 24 * 3600;
+  //Yuanguo: getloadavg() gets the average load of last 1, 5, 15 minutes; here just get that of the last 1 minute;
   if (getloadavg(loadavgs, 1) == 1) {
     logger->set(l_osd_loadavg, 100 * loadavgs[0]);
     daily_loadavg = (daily_loadavg * (n_samples - 1) + loadavgs[0]) / n_samples;

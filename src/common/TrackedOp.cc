@@ -324,7 +324,7 @@ bool OpTracker::check_ops_in_flight(std::vector<string> &warning_vector, int *sl
 
   warning_vector.reserve(log_threshold + 1);
   //store summary message
-  warning_vector.push_back("");
+  warning_vector.push_back(""); //Yuanguo: reserve warning_vector[0], it will be filled later, see it below;
 
   int _slow = 0;    // total slow
   if (!slow)
@@ -359,6 +359,10 @@ bool OpTracker::check_ops_in_flight(std::vector<string> &warning_vector, int *sl
         warning_vector.push_back(ss.str());
 
         // only those that have been shown will backoff
+        // Yuanguo: "i" has been shown this time; we don't want "i" to be shown too frequently, so we double its 
+        //      warn_interval_multiplier, as a result, "i" will not be shown again until:
+        //                 i->get_initiated() + (complaint_time * i->warn_interval_multiplier) < now 
+        //      becomes true again;
         i->warn_interval_multiplier *= 2;
       }
       ++i;

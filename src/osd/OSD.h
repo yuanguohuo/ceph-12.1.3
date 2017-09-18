@@ -1520,7 +1520,7 @@ private:
 
   void heartbeat_kick() {
     Mutex::Locker l(heartbeat_lock);
-    heartbeat_cond.Signal();
+    heartbeat_cond.Signal(); //Yuanguo: heartbeat thread is waiting this cond;
   }
 
   struct T_Heartbeat : public Thread {
