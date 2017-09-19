@@ -1729,9 +1729,11 @@ private:
     }
 
     /// wake any pg waiters after a PG is created/instantiated
+    //Yuanguo:  to_process back --> pqueue front
     void wake_pg_waiters(spg_t pgid);
 
     /// prune ops (and possiblye pg_slots) for pgs that shouldn't be here
+    //Yuanguo: remove the ops that shouldn't be processed by me ('this' OSD) according to 'osdmap';
     void prune_pg_waiters(OSDMapRef osdmap, int whoami);
 
     /// clear cached PGRef on pg deletion
