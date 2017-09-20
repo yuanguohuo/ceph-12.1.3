@@ -59,6 +59,9 @@ class WeightedPriorityQueue :  public OpQueue <T, K>
           item(i)
           {}
     };
+
+    //Yuanguo:
+    //    key => ListPair (item, cost) list;
     class Klass : public bi::set_base_hook<>
     {
       typedef bi::list<ListPair> ListPairs;
@@ -114,6 +117,13 @@ class WeightedPriorityQueue :  public OpQueue <T, K>
         return count;
       }
     };
+
+    //Yuanguo:
+    //       priority =>           key:5 => ListPair list; 
+    //                             / \
+    //                            /   \
+    //                           /   key:6 => ListPair list;
+    //                        key:3 => ListPair list;
     class SubQueue : public bi::set_base_hook<>
     {
       typedef bi::rbtree<Klass> Klasses;
@@ -184,6 +194,30 @@ class WeightedPriorityQueue :  public OpQueue <T, K>
         }
       }
     };
+
+    //Yuanguo:
+    //
+    //                               priority:40 =>    key:5 => ListPair list
+    //                                  /\             / \
+    //                                 /  \           /   \
+    //                                /    \         /   key:6 => ListPair list
+    //                               /      \     key:3 => ListPair list
+    //                              /        \
+    //                             /          \
+    //                            /            \
+    //                           /          priority:50 =>     key:5 => ListPair list
+    //                          /                              / \
+    //                         /                              /   \
+    //                        /                              /   key:6 => ListPair list
+    //                       /                            key:3 => ListPair list
+    //                      /
+    //                     /
+    //                 priority:38=>     key:5 => ListPair
+    //                                    / \
+    //                                   /   \
+    //                                  /   key:6 => ListPa
+    //                               key:3 => ListPair list
+    //                                          
     class Queue {
       typedef bi::rbtree<SubQueue> SubQueues;
       typedef typename SubQueues::iterator Sit;
@@ -214,6 +248,10 @@ class WeightedPriorityQueue :  public OpQueue <T, K>
 	  }
 	  ++size;
 	}
+
+  //Yuanguo:
+  //   if strict, select the one with the highest priority;
+  //   if not strict; select randomly, but item with lower cost has better chance;
 	T pop(bool strict = false) {
 	  --size;
 	  Sit i = --queues.end();
@@ -311,12 +349,19 @@ class WeightedPriorityQueue :  public OpQueue <T, K>
     void enqueue_front(K cl, unsigned p, unsigned cost, T item) final {
       normal.insert(p, cl, cost, item, true);
     }
+
+    //Yuanguo: if strict queue is not empty, dequeue from strict queue;
+    //         dequeue from normal queue, if and only if strict queue is empty;
+    //  so, strict queue is "superior to" normal queue; moreover, in strict queue, 
+    //  item with higher priority is "superior to" that with lower priority, and 
+    //  int normal queue, items are popped randomly (item with lower cost has better
+    //  chance);
     T dequeue() override {
       assert(strict.size + normal.size > 0);
       if (!strict.empty()) {
-	return strict.pop(true);
+	return strict.pop(true); //Yuanguo: item with higher priority is "superior to" that with lower priority;
       }
-      return normal.pop();
+      return normal.pop(); //Yuanguo: the items are popped randomly (item with lower cost has better chance);
     }
     void dump(ceph::Formatter *f) const override {
       f->open_array_section("high_queues");

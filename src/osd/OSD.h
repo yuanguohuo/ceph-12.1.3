@@ -1627,6 +1627,9 @@ private:
     : public ShardedThreadPool::ShardedWQ<pair<spg_t,PGQueueable>>
   {
     struct ShardData {
+      //Yuanguo: sdata_lock and sdata_cond are used for those threads working
+      //     on this shard to wait; and for other thread to notify them; 
+      //  any other usage?
       Mutex sdata_lock;
       Cond sdata_cond;
 
@@ -1756,7 +1759,7 @@ private:
 	ShardData* sdata = shard_list[i];
 	assert (NULL != sdata); 
 	sdata->sdata_lock.Lock();
-	sdata->sdata_cond.Signal();
+	sdata->sdata_cond.Signal(); //Yuanguo: notify all threads working on the shard;
 	sdata->sdata_lock.Unlock();
       }
     }

@@ -1534,7 +1534,7 @@ OSDMapRef OSDService::_add_map(OSDMap *o)
 {
   epoch_t e = o->get_epoch();
 
-  if (cct->_conf->osd_map_dedup) {
+  if (cct->_conf->osd_map_dedup) {  //Yuanguo: true by default;
     // Dedup against an existing map at a nearby epoch
     OSDMapRef for_dedup = map_cache.lower_bound(e);
     if (for_dedup) {
@@ -7635,7 +7635,7 @@ void OSD::handle_osd_map(MOSDMap *m)
       o->decode(bl);
 
       ghobject_t fulloid = get_osdmap_pobject_name(e);
-      t.write(coll_t::meta(), fulloid, 0, bl.length(), bl);
+      t.write(coll_t::meta(), fulloid, 0, bl.length(), bl); //Yuanguo: coll_t is defined in osd/osd_types.h
       pin_map_bl(e, bl);
       pinned_maps.push_back(add_map(o));
 
@@ -10333,6 +10333,10 @@ void OSD::ShardedOpWQ::_enqueue(pair<spg_t, PGQueueable> item) {
   unsigned cost = item.second.get_cost();
   sdata->sdata_op_ordering_lock.Lock();
 
+  //Yuanguo: in strict queue, items are ordered strictly based on their 
+  //         priority; 
+  //         in normal queue, items will be selected randomly, but one with 
+  //         lower cost has better chance than that with higher cost;
   dout(20) << __func__ << " " << item.first << " " << item.second << dendl;
   if (priority >= osd->op_prio_cutoff)
     sdata->pqueue->enqueue_strict(
@@ -10344,7 +10348,7 @@ void OSD::ShardedOpWQ::_enqueue(pair<spg_t, PGQueueable> item) {
   sdata->sdata_op_ordering_lock.Unlock();
 
   sdata->sdata_lock.Lock();
-  sdata->sdata_cond.SignalOne();
+  sdata->sdata_cond.SignalOne(); //Yuanguo: notify a thread working on this shard;
   sdata->sdata_lock.Unlock();
 
 }
@@ -10373,7 +10377,7 @@ void OSD::ShardedOpWQ::_enqueue_front(pair<spg_t, PGQueueable> item)
   sdata->_enqueue_front(item, osd->op_prio_cutoff);
   sdata->sdata_op_ordering_lock.Unlock();
   sdata->sdata_lock.Lock();
-  sdata->sdata_cond.SignalOne();
+  sdata->sdata_cond.SignalOne(); //Yuanguo: notify a thread working on this shard;
   sdata->sdata_lock.Unlock();
 }
 
