@@ -1131,6 +1131,7 @@ void Objecter::_scan_requests(OSDSession *s,
   }
 }
 
+//Yuanguo: update osdmap of 'this' Objecter, and resend the requests;
 void Objecter::handle_osd_map(MOSDMap *m)
 {
   shunique_lock sul(rwlock, acquire_unique);

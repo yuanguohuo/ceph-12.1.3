@@ -7566,7 +7566,7 @@ void OSD::handle_osd_map(MOSDMap *m)
 
   // share with the objecter
   if (!is_preboot())
-    service.objecter->handle_osd_map(m);
+    service.objecter->handle_osd_map(m); //Yuanguo: update osdmap of the objecter, and resend requests pending on the objecter;
 
   epoch_t first = m->get_first();
   epoch_t last = m->get_last();
