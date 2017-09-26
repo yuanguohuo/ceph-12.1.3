@@ -152,6 +152,8 @@ template<class T>
   unsigned>::type cbits(T v) {
   if (v == 0)
     return 0;
+  //Yuanguo: 
+  //__builtin_clz: It takes the input parameter as a number (unsigned), and return the count of its leading zero’s;
   return (sizeof(v) * 8) - __builtin_clz(v);
 }
 
@@ -163,6 +165,8 @@ template<class T>
   unsigned>::type cbits(T v) {
   if (v == 0)
     return 0;
+  //Yuanguo: 
+  //__builtin_clzl: It takes the input parameter as a number (unsigned long), and return the count of its leading zero’s;
   return (sizeof(v) * 8) - __builtin_clzl(v);
 }
 
@@ -174,6 +178,8 @@ template<class T>
   unsigned>::type cbits(T v) {
   if (v == 0)
     return 0;
+  //Yuanguo: 
+  //__builtin_clzll: It takes the input parameter as a number (unsigned long long), and return the count of its leading zero’s;
   return (sizeof(v) * 8) - __builtin_clzll(v);
 }
 

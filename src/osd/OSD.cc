@@ -5999,6 +5999,7 @@ void OSD::got_full_map(epoch_t e)
            << ", still need more" << dendl;
 }
 
+//Yuanguo: move all elements from failure_pending to failure_queue.
 void OSD::requeue_failures()
 {
   Mutex::Locker l(heartbeat_lock);
@@ -6014,6 +6015,8 @@ void OSD::requeue_failures()
 	   << failure_queue.size() << dendl;
 }
 
+//Yuanguo: tell monitors which OSDs (that in failure_queue) have been failed, and 
+//    failed for how long; then move those OSDs to failure_pending;
 void OSD::send_failures()
 {
   assert(map_lock.is_locked());
@@ -8602,6 +8605,7 @@ void OSD::dispatch_context(PG::RecoveryCtx &ctx, PG *pg, OSDMapRef curmap,
   delete ctx.notify_list;
   delete ctx.query_map;
   delete ctx.info_map;
+
   if ((ctx.on_applied->empty() &&
        ctx.on_safe->empty() &&
        ctx.transaction->empty() &&

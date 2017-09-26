@@ -2075,11 +2075,16 @@ protected:
   void got_full_map(epoch_t e);
 
   // -- failures --
-  map<int,utime_t> failure_queue;
-  map<int,pair<utime_t,entity_inst_t> > failure_pending;
+  map<int,utime_t> failure_queue;   //Yuanguo: osd => utime_t
+  map<int,pair<utime_t,entity_inst_t> > failure_pending;  //Yuanguo: osd => utime_t
 
+  //Yuanguo: move all elements from failure_pending to failure_queue.
   void requeue_failures();
+
+  //Yuanguo: tell monitors which OSDs (that in failure_queue) have been failed, and 
+  //    failed for how long; then move those OSDs to failure_pending;
   void send_failures();
+
   void send_still_alive(epoch_t epoch, const entity_inst_t &i);
 
   // -- pg stats --

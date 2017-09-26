@@ -471,6 +471,39 @@ pg_t pg_t::get_ancestor(unsigned old_pg_num) const
   return ret;
 }
 
+//Yuanguo: if the pg_num is increased from old_pg_num to old_pg_num, whether *this* 
+//   pg should be split.
+//   *this* pg should be split if and only if 's' exists such that:
+//          old_pg_num <= s < new_pg_num  and 
+//          ceph_stable_mod(s, old_pg_num, old_mask) == m_seed
+//   in this case, *this* pg should be split into: *this* and s; 
+//   note: there may be more than one 's' make this hold;
+//   Example:
+//       pg_num = 6   (so pg_num_mask = 7)
+//
+//       pg-0:  m_seed = 0
+//       pg-1:  m_seed = 1
+//       pg-2:  m_seed = 2
+//       pg-3:  m_seed = 3
+//       pg-4:  m_seed = 4
+//       pg-5:  m_seed = 5
+//   And, we increase the pg_num
+//       pg_num = 12
+//
+//       pg-0: s = 8, thus pg-0 should be split into pg-0 and pg-8,
+//       pg-1: s = 9, thus pg-1 should be split into pg-1 and pg-9,
+//       pg-2: s = 6, 10, thus pg-2 should be split into pg-2, pg-6 and pg-10,
+//       pg-3: s = 7, 11, thus pg-3 should be split into pg-3, pg-7 and pg-11,
+//       pg-4: s = none, thus pg-4 should not be split;
+//       pg-5: s = none, thus pg-5 should not be split; 
+//
+// Yuanguo: it's clear that, when split we should keep
+//             ceph_stable_mod(new_m_seed, old_pg_num, old_pg_mask) == old_m_seed  ---- (1)
+//       Why? Because, we know that pgp_num <= pg_num (thus pgp_mask <= pg_mask),
+//       thus if (1) holds, then
+//             ceph_stable_mod(new_m_seed, old_pgp_num, old_pgp_mask) == old placement seed  --(2)
+//       holds, which means that the newly split pg (new_m_seed) will be placed on the same
+//       set of OSD's (until pgp_num is increased).
 bool pg_t::is_split(unsigned old_pg_num, unsigned new_pg_num, set<pg_t> *children) const
 {
   assert(m_seed < old_pg_num);
@@ -496,6 +529,8 @@ bool pg_t::is_split(unsigned old_pg_num, unsigned new_pg_num, set<pg_t> *childre
       }
     }
   }
+
+  //Yuanguo: this implementation is easier to follow, but it's less efficient than above;
   if (false) {
     // brute force
     int old_bits = cbits(old_pg_num);
@@ -2990,7 +3025,7 @@ public:
     // We need to decide who might have unfound objects that we need
     auto p = interval_map.rbegin();
     auto end = interval_map.rend();
-    for (; p != end; ++p) {
+    for (; p != end; ++p) {           //Yuanguo: for each interval
       const PastIntervals::pg_interval_t &interval(p->second);
       // If nothing changed, we don't care about this interval.
       if (!interval.maybe_went_rw)
@@ -2999,7 +3034,7 @@ public:
       int i = 0;
       std::vector<int>::const_iterator a = interval.acting.begin();
       std::vector<int>::const_iterator a_end = interval.acting.end();
-      for (; a != a_end; ++a, ++i) {
+      for (; a != a_end; ++a, ++i) {  //Yuanguo: for each OSD in current interval;
 	pg_shard_t shard(*a, ec_pool ? shard_id_t(i) : shard_id_t::NO_SHARD);
 	if (*a != CRUSH_ITEM_NONE)
 	  all_participants.insert(shard);
@@ -3440,7 +3475,7 @@ bool PastIntervals::is_new_interval(
     new_up != old_up ||
     old_min_size != new_min_size ||
     old_size != new_size ||
-    pgid.is_split(old_pg_num, new_pg_num, 0) ||
+    pgid.is_split(old_pg_num, new_pg_num, 0) || //Yuanguo: increasing pg_num doesn't impact me.
     old_sort_bitwise != new_sort_bitwise ||
     old_recovery_deletes != new_recovery_deletes;
 }
