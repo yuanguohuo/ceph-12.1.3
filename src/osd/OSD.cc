@@ -1154,8 +1154,8 @@ bool OSDService::should_share_map(entity_name_t name, Connection *con,
     }
   }
 
-  if (con->get_messenger() == osd->cluster_messenger &&
-      con != osd->cluster_messenger->get_loopback_connection() &&
+  if (con->get_messenger() == osd->cluster_messenger && //Yuanguo: peer is connected to me via cluster_messenger, so the peer is an OSD;
+      con != osd->cluster_messenger->get_loopback_connection() &&  //Yuanguo: not myself;
       osdmap->is_up(name.num()) &&
       (osdmap->get_cluster_addr(name.num()) == con->get_peer_addr() ||
        osdmap->get_hb_back_addr(name.num()) == con->get_peer_addr())) {
@@ -1177,7 +1177,7 @@ bool OSDService::should_share_map(entity_name_t name, Connection *con,
 void OSDService::share_map(
     entity_name_t name,
     Connection *con,
-    epoch_t epoch,
+    epoch_t epoch,  //Yuanguo: share from/since the 'epoch' to osdmap;
     OSDMapRef& osdmap,
     epoch_t *sent_epoch_p)
 {
@@ -1241,7 +1241,7 @@ bool OSDService::can_inc_scrubs_pending()
   bool can_inc = false;
   Mutex::Locker l(sched_scrub_lock);
 
-  if (scrubs_pending + scrubs_active < cct->_conf->osd_max_scrubs) {
+  if (scrubs_pending + scrubs_active < cct->_conf->osd_max_scrubs) { //Yuanguo: pending jobs + active jobs < osd_max_scrubs;
     dout(20) << __func__ << " " << scrubs_pending << " -> " << (scrubs_pending+1)
 	     << " (max " << cct->_conf->osd_max_scrubs << ", active " << scrubs_active << ")" << dendl;
     can_inc = true;
@@ -1257,7 +1257,7 @@ bool OSDService::inc_scrubs_pending()
   bool result = false;
 
   sched_scrub_lock.Lock();
-  if (scrubs_pending + scrubs_active < cct->_conf->osd_max_scrubs) {
+  if (scrubs_pending + scrubs_active < cct->_conf->osd_max_scrubs) { //Yuanguo: pending jobs + active jobs < osd_max_scrubs;
     dout(20) << "inc_scrubs_pending " << scrubs_pending << " -> " << (scrubs_pending+1)
 	     << " (max " << cct->_conf->osd_max_scrubs << ", active " << scrubs_active << ")" << dendl;
     result = true;
