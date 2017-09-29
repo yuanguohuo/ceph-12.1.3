@@ -31,6 +31,10 @@ struct pow2_hist_t { //
    * bin size is 2^index
    * value is count of elements that are <= the current bin but > the previous bin.
    */
+  //Yuanguo:
+  // index:           0        1       2       3       4        5      ...
+  // area:          0<n<=1   1<n<=2  2<n<=4  4<n<=8  8<n<=16 16<n<=32  ...
+  // num in area:     h[0]     h[1]    h[2]    h[3]    h[4]     h[5]   ...
   std::vector<int32_t> h;
 
 private:
