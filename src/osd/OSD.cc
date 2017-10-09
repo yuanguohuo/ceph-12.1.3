@@ -4638,7 +4638,7 @@ void OSD::maybe_update_heartbeat_peers()
   if (!heartbeat_peers_need_update()) //Yuanguo: have calculated heartbeat peers and the last calculation is NOT too old;
     return;
 
-  //Yuanguo: we havn't calculated heartbeat peers yet or the last calculation is too old; start calculate now;
+  //Yuanguo: we havn't calculated heartbeat peers yet or the last calculation is too old; calculate it now;
 
   heartbeat_clear_peers_need_update();
 
@@ -4706,6 +4706,7 @@ void OSD::maybe_update_heartbeat_peers()
   }
 
   // too few?
+  // Yuanguo: if too few, add the next, the next of the next ..., until enough or circle;
   int start = osdmap->get_next_up_osd_after(whoami);
   for (int n = start; n >= 0; ) {
     if ((int)heartbeat_peers.size() >= cct->_conf->osd_heartbeat_min_peers)
@@ -4721,6 +4722,7 @@ void OSD::maybe_update_heartbeat_peers()
   }
 
   // too many?
+  // Yuanguo: if too many, remove those in 'extras' set but not in 'want' set;
   for (set<int>::iterator p = extras.begin();
        (int)heartbeat_peers.size() > cct->_conf->osd_heartbeat_min_peers && p != extras.end();
        ++p) {
@@ -7415,6 +7417,8 @@ void OSD::sched_scrub()
 
 void OSD::wait_for_new_map(OpRequestRef op)
 {
+  //Yuanguo: if waiting_for_osdmap is not empty, we have subscribed osdmap when we put in the first op;
+  //    if waiting_for_osdmap, it's the first op, so we need to subscribe the osdmap;
   // ask?
   if (waiting_for_osdmap.empty()) {
     osdmap_subscribe(osdmap->get_epoch() + 1, false);

@@ -1148,7 +1148,7 @@ int FuseStore::main()
   const char *v[] = {
     "foo",
     mount_point.c_str(),
-    "-f",
+    "-f", //Yuanguo: osd creates a thread for fuse, so fuse runs in foreground (otherwise, fuse_main will fork and let parent _exit);
     "-d", // debug
   };
   int c = 3;
@@ -1157,6 +1157,10 @@ int FuseStore::main()
   return fuse_main(c, (char**)v, &fs_oper, (void*)this);
 }
 
+//Yuanguo: FuseStore::start(), FuseStore::loop and FuseStore::stop do the same thing as fuse_main() does;
+//   fuse_main() is a function in libfuse, here FuseStore::start/loop/stop don't call it, but instead break it 
+//   into 3 functions and copy code from it. See fuse_main in libfuse (https://github.com/libfuse/libfuse);
+//Yuanguo: why not just start a thread and call fuse_main() in the thread?
 int FuseStore::start()
 {
   dout(10) << __func__ << dendl;
