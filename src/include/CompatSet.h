@@ -119,9 +119,9 @@ struct CompatSet {
   FeatureSet compat;
   // If any of these features are missing, read is possible ( as long
   // as no incompat feature is missing ) but it is not possible to write
-  FeatureSet ro_compat;
+  FeatureSet ro_compat;  //Yuanguo: readable && ro_compat no missing => writeable
   // If any of these features are missing, read or write is not possible
-  FeatureSet incompat;
+  FeatureSet incompat;   //Yuanguo: incompat no missing => readable
 
   CompatSet(FeatureSet& _compat, FeatureSet& _ro_compat, FeatureSet& _incompat) :
     compat(_compat), ro_compat(_ro_compat), incompat(_incompat) {}
@@ -133,6 +133,10 @@ struct CompatSet {
      features required to read the other? */
   bool readable(CompatSet const& other) const {
     return !((other.incompat.mask ^ incompat.mask) & other.incompat.mask);
+    //Yuanguo:|--------------(1)----------------|    |--------(2)------|
+    //  (1): features required by other but I don't have, or not required but I have;
+    //  (2): features required by other
+    //  (1)&(2): features required by other but I don't have
   }
 
   /* does this filesystem implementation have the
