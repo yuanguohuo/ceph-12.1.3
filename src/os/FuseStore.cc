@@ -38,6 +38,8 @@ struct fs_info {
 int FuseStore::open_file(string p, struct fuse_file_info *fi,
 			 std::function<int(bufferlist *bl)> f)
 {
+  dout(99) << "Yuanguo: " <<  __func__ << " enter" << dendl;
+
   if (open_files.count(p)) {
     OpenFile *o = open_files[p];
     fi->fh = reinterpret_cast<uint64_t>(o);
@@ -1148,7 +1150,7 @@ int FuseStore::main()
   const char *v[] = {
     "foo",
     mount_point.c_str(),
-    "-f", //Yuanguo: osd creates a thread for fuse, so fuse runs in foreground (otherwise, fuse_main will fork and let parent _exit);
+    "-f",
     "-d", // debug
   };
   int c = 3;
@@ -1169,7 +1171,7 @@ int FuseStore::start()
   const char *v[] = {
     "foo",
     mount_point.c_str(),
-    "-f", // foreground
+    "-f", // foreground  //Yuanguo: osd creates a thread for fuse, so fuse runs in foreground (otherwise, fuse_main will fork and let parent _exit);
     "-d", // debug
   };
   int c = 3;
@@ -1182,11 +1184,15 @@ int FuseStore::start()
     return -EINVAL;
   }
 
+  dout(99) << "Yuanguo: " <<  __func__ << " mountpoint=" << info->mountpoint << dendl;
+
   info->ch = fuse_mount(info->mountpoint, &info->args);
   if (!info->ch) {
     derr << __func__ << " fuse_mount failed" << dendl;
     return -EIO;
   }
+
+  dout(99) << "Yuanguo: " <<  __func__ << " fuse_mount succeeded" << dendl;
 
   info->f = fuse_new(info->ch, &info->args, &fs_oper, sizeof(fs_oper),
 		     (void*)this);
@@ -1195,6 +1201,8 @@ int FuseStore::start()
     derr << __func__ << " fuse_new failed" << dendl;
     return -EIO;
   }
+
+  dout(99) << "Yuanguo: " <<  __func__ << " fuse_new succeeded" << dendl;
 
   fuse_thread.create("fusestore");
   dout(10) << __func__ << " done" << dendl;
