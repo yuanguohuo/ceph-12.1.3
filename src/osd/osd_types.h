@@ -2886,12 +2886,15 @@ PastIntervals::PriorSet::PriorSet(
   bool ec_pool,
   epoch_t last_epoch_started,
   IsPGRecoverablePredicate *c,
-  F f,
+  F f,  //Yuanguo: f is used to get the state (UP,DOWN,LOST,...) of a given osd, based on the osdmap of a PG;
   const vector<int> &up,
   const vector<int> &acting,
   const DoutPrefixProvider *dpp)
   : ec_pool(ec_pool), pg_down(false), pcontdec(c)
 {
+  ldpp_dout(dpp, 99) << "Yuanguo: " << __func__ 
+    << " ec_pool=" << ec_pool << " last_epoch_started=" << last_epoch_started << " up=" << up << " acting=" << acting << dendl;
+
   /*
    * We have to be careful to gracefully deal with situations like
    * so. Say we have a power outage or something that takes out both
@@ -2967,9 +2970,16 @@ PastIntervals::PriorSet::PriorSet(
     }
   }
 
+  //Yuanguo: this function iteraters each interval and checks it; the way it checks an interval 
+  //         is defined by the lambda function below;
   past_intervals.iterate_mayberw_back_to(
     ec_pool,
     last_epoch_started,
+    //Yuanguo: this function checks a given interval in this way:
+    //    1. figure out the 'up set' and 'down set'; 
+    //    2. check if the 'up set' is enough for peering. for replicated pg,
+    //       it's enough if 'up set' is not empty;
+    //    3. if not enough, set pg_down=true, and blocked_by='down set' (PG will become offline);
     [&](epoch_t start, const set<pg_shard_t> &acting) {
       ldpp_dout(dpp, 10) << "build_prior maybe_rw interval:" << start
 			 << ", acting: " << acting << dendl;

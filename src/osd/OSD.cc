@@ -4211,6 +4211,8 @@ int OSD::handle_pg_peering_evt(
   epoch_t epoch,
   PG::CephPeeringEvtRef evt)
 {
+  dout(10) << "Yuanguo: " << __func__ << " pgid=" << pgid << " epoch=" << epoch << " event: " << evt->get_desc() << dendl;
+
   if (service.splitting(pgid)) {
     peering_wait_for_split[pgid].push_back(evt);
     return -EEXIST;
@@ -4218,6 +4220,8 @@ int OSD::handle_pg_peering_evt(
 
   PG *pg = _lookup_lock_pg(pgid);
   if (!pg) {
+    dout(10) << "Yuanguo: " << __func__ << " not found " << pgid << dendl;
+
     // same primary?
     if (!osdmap->have_pg_pool(pgid.pool()))
       return -EINVAL;
@@ -4249,6 +4253,8 @@ int OSD::handle_pg_peering_evt(
       pgid,
       &resurrected,
       &old_pg_state);
+
+    dout(10) << "Yuanguo: " << __func__ << " result= " << result << dendl;
 
     PG::RecoveryCtx rctx = create_context();
     switch (result) {
@@ -4368,12 +4374,15 @@ int OSD::handle_pg_peering_evt(
       return 0;
     }
   } else {
+    dout(10) << "Yuanguo: " << __func__ << " found " << pgid << dendl;
+
     // already had it.  did the mapping change?
     if (epoch < pg->info.history.same_interval_since) {
       dout(10) << *pg << __func__ << " acting changed in "
 	       << pg->info.history.same_interval_since
 	       << " (msg from " << epoch << ")" << dendl;
     } else {
+      dout(10) << "Yuanguo: " << __func__ << " enqueue " << evt->get_desc() << dendl;
       pg->queue_peering_event(evt);
     }
     pg->unlock();
@@ -8090,12 +8099,18 @@ bool OSD::advance_pg(
   PG::RecoveryCtx *rctx,
   set<PGRef> *new_pgs)
 {
+  dout(10) << "Yuanguo: " << __func__ << " osd_epoch=" << osd_epoch << " *pg=" << *pg << dendl;
+
   assert(pg->is_locked());
   epoch_t next_epoch = pg->get_osdmap()->get_epoch() + 1;
   OSDMapRef lastmap = pg->get_osdmap();
 
   if (lastmap->get_epoch() == osd_epoch)
+  {
+    dout(10) << "Yuanguo: " << __func__ << " no need to advance pg. lastmap->get_epoch()=" << lastmap->get_epoch() << " osd_epoch=" << osd_epoch << dendl;
     return true;
+  }
+
   assert(lastmap->get_epoch() < osd_epoch);
 
   epoch_t min_epoch = service.get_min_pg_epoch();
@@ -8378,9 +8393,11 @@ bool OSD::require_same_or_newer_map(OpRequestRef& op, epoch_t epoch,
   // ok, our map is same or newer.. do they still exist?
   if (m->get_connection()->get_messenger() == cluster_messenger &&
       !require_same_peer_instance(op->get_req(), osdmap, is_fast_dispatch)) {
+    dout(10) << "Yuanguo: " << __func__ << " return false " << pgid << dendl;
     return false;
   }
 
+  dout(10) << "Yuanguo: " << __func__ << " return true " << pgid << dendl;
   return true;
 }
 

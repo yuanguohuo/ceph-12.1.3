@@ -804,10 +804,13 @@ bool PG::needs_backfill() const
 
 void PG::check_past_interval_bounds() const
 {
+  //Yuanguo: return [oldest,  first-epoch-in-current-interval)
+  //  for example:   [3,7)  [7,15)  [15, current), then [3,15) is returned;
   auto rpib = get_required_past_interval_bounds(
     info,
     osd->get_superblock().oldest_map);
-  if (rpib.first >= rpib.second) {
+
+  if (rpib.first >= rpib.second) {  //Yuanguo: there should be no past intervals;
     if (!past_intervals.empty()) {
       osd->clog->error() << info.pgid << " required past_interval bounds are"
 			 << " empty [" << rpib << ") but past_intervals is not: "
@@ -827,6 +830,11 @@ void PG::check_past_interval_bounds() const
       assert(!past_intervals.empty());
     }
 
+    //Yuanguo: for example: [1,3)  [3,7)  [7,15)  [15, current),  then we have past intervals:
+    //          [1,3)     -- first = 1
+    //          [3,7)     
+    //          [7,15)    -- last = 15
+    //and, [1,15) is returned;
     auto apib = past_intervals.get_bounds();
     if (apib.first > rpib.first) {
       osd->clog->error() << info.pgid << " past_intervals [" << apib
@@ -6224,6 +6232,7 @@ PG::RecoveryState::Primary::Primary(my_context ctx)
 
   // set CREATING bit until we have peered for the first time.
   if (pg->info.history.last_epoch_started == 0) {
+    ldout(pg->cct, 99) << "Yuanguo: " << __func__ << "last_epoch_started=0" << dendl;
     pg->state_set(PG_STATE_CREATING);
     // use the history timestamp, which ultimately comes from the
     // monitor in the create case.
