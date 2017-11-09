@@ -1503,8 +1503,15 @@ bool PG::choose_acting(pg_shard_t &auth_log_shard_id,
       assert(want_backfill.empty());
       vector<int> empty;
       osd->queue_want_pg_temp(info.pgid.pgid, empty);
-    } else
+    } else {
+      //Yuanguo: 
+      // previously:
+      //     up=[1,3,8]
+      //     pg temp = [1,3,9]
+      //     acting=[1,3,9]
+      // now, we find [1,3,7] (want_acting) is what we what, so change pg temp to [1,3,7];
       osd->queue_want_pg_temp(info.pgid.pgid, want);
+    }
     return false;
   }
   want_acting.clear();
