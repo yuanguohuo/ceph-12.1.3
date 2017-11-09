@@ -444,6 +444,10 @@ void PG::proc_replica_log(
   peer_missing[from].claim(omissing);
 }
 
+//Yuanguo: I am primary, and I am handling a notify from a replica;
+//    from        : the replia;
+//    oinfo       : the pg info sent by the replica;
+//    send_epoch  : the epoch of the replica when it sent the pg info;
 bool PG::proc_replica_info(
   pg_shard_t from, const pg_info_t &oinfo, epoch_t send_epoch)
 {
@@ -1260,7 +1264,7 @@ void PG::calc_replicated_acting(
   *want_primary = primary->first;
   want->push_back(primary->first.osd);
   acting_backfill->insert(primary->first);
-  unsigned usable = 1;
+  unsigned usable = 1;  //Yuanguo: how many in 'want'?
 
   // select replicas that have log contiguity with primary.
   // prefer up, then acting, then any peer_info osds 
@@ -1319,6 +1323,11 @@ void PG::calc_replicated_acting(
       usable++;
     }
   }
+  
+  //Yuanguo: till now, 
+  //    want            :  up(complete and continuous) + acting(complete and continuous)
+  //    acting_backfill :  up + acting(complete and continuous)
+  //    backfill        :  up(incomplete or in-continuous)
 
   if (restrict_to_up_acting) {
     return;
@@ -1333,11 +1342,11 @@ void PG::calc_replicated_acting(
     if (i->first == primary->first)
       continue;
     vector<int>::const_iterator up_it = find(up.begin(), up.end(), i->first.osd);
-    if (up_it != up.end())
+    if (up_it != up.end()) //Yuanguo: skip those in 'up'
       continue;
     vector<int>::const_iterator acting_it = find(
       acting.begin(), acting.end(), i->first.osd);
-    if (acting_it != acting.end())
+    if (acting_it != acting.end())  //Yuanguo: skip those in 'acting'
       continue;
 
     if (i->second.is_incomplete() ||
@@ -1352,6 +1361,11 @@ void PG::calc_replicated_acting(
       usable++;
     }
   }
+
+  //Yuanguo:
+  //    want            :  up(complete and continuous) + acting(complete and continuous) + stray(complete and continuous)
+  //    acting_backfill :  up + acting(complete and continuous) + some stray ones
+  //    backfill        :  up(incomplete or in-continuous)
 }
 
 /**
@@ -1476,6 +1490,14 @@ bool PG::choose_acting(pg_shard_t &auth_log_shard_id,
     want_acting = want;
 
     if (want_acting == up) {
+      //Yuanguo: 'up' is the osd-set calculated from CRUSH; and want_acting (what we want to be acting-set) is 
+      //    the same as 'up'; so clear the pg temp. For example:
+      // previously:
+      //     up=[1,3,8]
+      //     pg temp = [1,3,9]
+      //     acting=[1,3,9]
+      // now, we find [1,3,8] (want_acting) is good, so remove pg temp;
+
       // There can't be any pending backfill if
       // want is the same as crush map up OSDs.
       assert(want_backfill.empty());
@@ -7646,6 +7668,12 @@ boost::statechart::result PG::RecoveryState::GetInfo::react(const MNotifyRec& in
 	infoevt.from, infoevt.notify.info, infoevt.notify.epoch_sent)) {
     // we got something new ...
     PastIntervals::PriorSet &prior_set = context< Peering >().prior_set;
+
+    //Yuanguo: pg->info.history might have been changed in 
+    //     proc_replica_info  -->
+    //     update_history -->
+    //     info.history.merge
+    // thus, the last_epoch_started might have been increased;
     if (old_start < pg->info.history.last_epoch_started) {
       ldout(pg->cct, 10) << " last_epoch_started moved forward, rebuilding prior" << dendl;
       prior_set = pg->build_prior();
