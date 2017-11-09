@@ -8393,11 +8393,11 @@ bool OSD::require_same_or_newer_map(OpRequestRef& op, epoch_t epoch,
   // ok, our map is same or newer.. do they still exist?
   if (m->get_connection()->get_messenger() == cluster_messenger &&
       !require_same_peer_instance(op->get_req(), osdmap, is_fast_dispatch)) {
-    dout(10) << "Yuanguo: " << __func__ << " return false " << pgid << dendl;
+    dout(10) << "Yuanguo: " << __func__ << " return false " << dendl;
     return false;
   }
 
-  dout(10) << "Yuanguo: " << __func__ << " return true " << pgid << dendl;
+  dout(10) << "Yuanguo: " << __func__ << " return true " << dendl;
   return true;
 }
 
