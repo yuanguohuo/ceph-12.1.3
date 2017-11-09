@@ -9059,6 +9059,12 @@ void OSD::handle_pg_query(OpRequestRef op)
        ++it) {
     spg_t pgid = it->first;
 
+    dout(10) << "Yuanguo: " << __func__ << " pgid=" << pgid 
+      << " from=" << it->second.from << " to=" << it->second.to 
+      << " epoch_sent=" << it->second.epoch_sent
+      << " type=" << it->second.type
+      << dendl;
+
     if (pgid.preferred() >= 0) {
       dout(10) << "ignoring localized pg " << pgid << dendl;
       continue;
@@ -9077,6 +9083,7 @@ void OSD::handle_pg_query(OpRequestRef op)
     {
       RWLock::RLocker l(pg_map_lock);
       if (pg_map.count(pgid)) {
+        dout(10) << "Yuanguo: " << __func__ <<  " pg_map contains " << pgid << dendl;
         PG *pg = 0;
         pg = _lookup_lock_pg_with_map_lock_held(pgid);
         pg->queue_query(
@@ -9088,7 +9095,10 @@ void OSD::handle_pg_query(OpRequestRef op)
     }
 
     if (!osdmap->have_pg_pool(pgid.pool()))
+    {
+      dout(10) << "Yuanguo: " << __func__ <<  " we don't have pool " << pgid.pool() << dendl;
       continue;
+    }
 
     // get active crush mapping
     int up_primary, acting_primary;
@@ -9121,6 +9131,7 @@ void OSD::handle_pg_query(OpRequestRef op)
 	it->second.type == pg_query_t::FULLLOG) {
       ConnectionRef con = service.get_con_osd_cluster(from, osdmap->get_epoch());
       if (con) {
+      dout(10) << "Yuanguo: " << __func__ << " pgid= " << pgid << " send pg log to " << it->second.from << dendl;
 	MOSDPGLog *mlog = new MOSDPGLog(
 	  it->second.from, it->second.to,
 	  osdmap->get_epoch(), empty,
@@ -9129,6 +9140,7 @@ void OSD::handle_pg_query(OpRequestRef op)
 	con->send_message(mlog);
       }
     } else {
+      dout(10) << "Yuanguo: " << __func__ << " pgid= " << pgid << " put into notify list, to " << it->second.from << dendl;
       notify_list[from].push_back(
 	make_pair(
 	  pg_notify_t(
