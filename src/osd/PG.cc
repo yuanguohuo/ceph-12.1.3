@@ -1325,9 +1325,9 @@ void PG::calc_replicated_acting(
   }
   
   //Yuanguo: till now, 
-  //    want            :  up(complete and continuous) + acting(complete and continuous)
-  //    acting_backfill :  up(all) + acting(complete and continuous)
-  //    backfill        :  up(incomplete or in-continuous)
+  //    want            :  up(complete and contiguous) + acting(complete and contiguous)
+  //    acting_backfill :  up(all) + acting(complete and contiguous)
+  //    backfill        :  up(incomplete or in-contiguous)
 
   if (restrict_to_up_acting) {
     return;
@@ -1363,12 +1363,12 @@ void PG::calc_replicated_acting(
   }
 
   //Yuanguo:
-  //    want            :  up(complete and continuous) + acting(complete and continuous) + stray(complete and continuous), it
+  //    want            :  up(complete and contiguous) + acting(complete and contiguous) + stray(complete and contiguous), it
   //                       is the ideal 'acting set' based on the peer infos we have got;
-  //    acting_backfill :  up(all) + acting(complete and continuous) + stray(complete and continuous)
-  //    backfill        :  up(incomplete or in-continuous)
+  //    acting_backfill :  up(all) + acting(complete and contiguous) + stray(complete and contiguous)
+  //    backfill        :  up(incomplete or in-contiguous)
   //
-  //    thus,   acting_backfill = want + backfill 
+  //    thus,   acting_backfill = want + backfill     ; maybe 'want' is better to renamed to 'acting';
 }
 
 /**
@@ -1419,6 +1419,10 @@ bool PG::choose_acting(pg_shard_t &auth_log_shard_id,
   assert(!auth_log_shard->second.is_incomplete());
   auth_log_shard_id = auth_log_shard->first;
 
+  //Yuanguo: 
+  //    want                 : the ideal 'acting set' based on the peer infos we have got;
+  //    want_backfill        : the osds who need backfill;
+  //    want_acting_backfill : want + want_backfill;
   set<pg_shard_t> want_backfill, want_acting_backfill;
   vector<int> want;  //Yuanguo: the ideal 'acting set' based on the peer infos we have got;
   pg_shard_t want_primary;
@@ -1543,6 +1547,12 @@ bool PG::choose_acting(pg_shard_t &auth_log_shard_id,
   dout(10) << "choose_acting want " << want << " (== acting) backfill_targets " 
 	   << want_backfill << dendl;
   return true;
+
+  //Yuanguo: 
+  //    want_acting          : the ideal 'acting set' based on the peer infos we have got (if it's different from
+  //                           current acting)
+  //    backfill_targets     : the osds who need backfill;
+  //    actingbackfilli      : want_acting + backfill_targets;
 }
 
 /* Build the might_have_unfound set.
@@ -7568,6 +7578,7 @@ boost::statechart::result PG::RecoveryState::Stray::react(const MQuery& query)
 {
   PG *pg = context< RecoveryMachine >().pg;
   if (query.query.type == pg_query_t::INFO) {
+    ldout(pg->cct, 10) << "Yuanguo: " << __func__ << " got info-query from primary osd." << query.from << dendl;
     pair<pg_shard_t, pg_info_t> notify_info;
     pg->update_history(query.query.history);
     pg->fulfill_info(query.from, query.query, notify_info);
@@ -7580,6 +7591,7 @@ boost::statechart::result PG::RecoveryState::Stray::react(const MQuery& query)
 	notify_info.second),
       pg->past_intervals);
   } else {
+    ldout(pg->cct, 10) << "Yuanguo: " << __func__ << " got log-query from primary osd." << query.from << dendl;
     pg->fulfill_log(query.from, query.query, query.query_epoch);
   }
   return discard_event();
