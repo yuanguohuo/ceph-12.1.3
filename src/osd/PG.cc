@@ -1326,7 +1326,7 @@ void PG::calc_replicated_acting(
   
   //Yuanguo: till now, 
   //    want            :  up(complete and continuous) + acting(complete and continuous)
-  //    acting_backfill :  up + acting(complete and continuous)
+  //    acting_backfill :  up(all) + acting(complete and continuous)
   //    backfill        :  up(incomplete or in-continuous)
 
   if (restrict_to_up_acting) {
@@ -1363,9 +1363,12 @@ void PG::calc_replicated_acting(
   }
 
   //Yuanguo:
-  //    want            :  up(complete and continuous) + acting(complete and continuous) + stray(complete and continuous)
-  //    acting_backfill :  up + acting(complete and continuous) + some stray ones
+  //    want            :  up(complete and continuous) + acting(complete and continuous) + stray(complete and continuous), it
+  //                       is the ideal 'acting set' based on the peer infos we have got;
+  //    acting_backfill :  up(all) + acting(complete and continuous) + stray(complete and continuous)
   //    backfill        :  up(incomplete or in-continuous)
+  //
+  //    thus,   acting_backfill = want + backfill 
 }
 
 /**
@@ -1417,7 +1420,7 @@ bool PG::choose_acting(pg_shard_t &auth_log_shard_id,
   auth_log_shard_id = auth_log_shard->first;
 
   set<pg_shard_t> want_backfill, want_acting_backfill;
-  vector<int> want;
+  vector<int> want;  //Yuanguo: the ideal 'acting set' based on the peer infos we have got;
   pg_shard_t want_primary;
   stringstream ss;
   if (!pool.info.ec_pool())
@@ -1514,6 +1517,14 @@ bool PG::choose_acting(pg_shard_t &auth_log_shard_id,
     }
     return false;
   }
+  //Yuanguo: if want == acting:
+  //    1. if acting==up, that means previously acting was the same as the set calculated by CRUSH(the 'up'), there was
+  //       no 'pg temp' for this PG. And the current ideal acting ('want') is the same as it, everything is good, we don't 
+  //       need any change;
+  //    2. if acting!=up, that means previously acting was different from the set calculated by CRUSH(the 'up'), there
+  //       was 'pg temp' for this PG. And the current ideal acting ('want') is the same as previous acting, so we keep
+  //       the previous acting (and the 'pg temp');
+
   want_acting.clear();
   actingbackfill = want_acting_backfill;
   dout(10) << "actingbackfill is " << actingbackfill << dendl;
@@ -7764,7 +7775,7 @@ PG::RecoveryState::GetLog::GetLog(my_context ctx)
   // adjust acting?
   if (!pg->choose_acting(auth_log_shard, false,
 			 &context< Peering >().history_les_bound)) {
-    if (!pg->want_acting.empty()) {
+    if (!pg->want_acting.empty()) {  //Yuanguo: we have ideal/better acting set, change to it;
       post_event(NeedActingChange());
     } else {
       post_event(IsIncomplete());
@@ -7774,6 +7785,7 @@ PG::RecoveryState::GetLog::GetLog(my_context ctx)
 
   // am i the best?
   if (auth_log_shard == pg->pg_whoami) {
+    ldout(pg->cct, 10) << "Yuanguo: " << __func__ << " I (primary) am the best, my log will be authoritative" << dendl;
     post_event(GotLog());
     return;
   }
@@ -7795,8 +7807,8 @@ PG::RecoveryState::GetLog::GetLog(my_context ctx)
        ++p) {
     if (*p == pg->pg_whoami) continue;
     pg_info_t& ri = pg->peer_info[*p];
-    if (ri.last_update < pg->info.log_tail && ri.last_update >= best.log_tail &&
-        ri.last_update < request_log_from)
+    if (ri.last_update < pg->info.log_tail && ri.last_update >= best.log_tail && //Yuanguo: not covered by my log but covered by best's log;
+        ri.last_update < request_log_from) //Yuanguo: we need to cover all, so choose the minimum;
       request_log_from = ri.last_update;
   }
 
