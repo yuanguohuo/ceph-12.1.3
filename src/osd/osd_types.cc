@@ -3590,10 +3590,18 @@ bool PastIntervals::check_new_interval(
 	new_up,
 	osdmap,
 	lastmap,
-	pgid)) {
+	pgid))
+  {
+    //Yuanguo: 
+    //   previously
+    //        past_intervals:   [2,6] [7,11]
+    //        current interval: [12-]     //same_interval_since=12
+    //   now we got osdmap (epoch=18) and we found is_new_interval()==true, so, past_intervals should be evolved into:
+    //        past_intervals:   [2,6] [7,11] [12,17]
+    //        current interval: [18-]     //same_interval_since=18
     pg_interval_t i;
-    i.first = same_interval_since;
-    i.last = osdmap->get_epoch() - 1;
+    i.first = same_interval_since;      //Yuanguo: first = 12
+    i.last = osdmap->get_epoch() - 1;   //Yuanguo: last  = 18-1 = 17
     assert(i.first <= i.last);
     i.acting = old_acting;
     i.up = old_up;
@@ -3601,10 +3609,9 @@ bool PastIntervals::check_new_interval(
     i.up_primary = old_up_primary;
 
     unsigned num_acting = 0;
-    for (vector<int>::const_iterator p = i.acting.begin(); p != i.acting.end();
-	 ++p)
+    for (vector<int>::const_iterator p = i.acting.begin(); p != i.acting.end(); ++p)
       if (*p != CRUSH_ITEM_NONE)
-	++num_acting;
+        ++num_acting;
 
     assert(lastmap->get_pools().count(pgid.pool()));
     const pg_pool_t& old_pg_pool = lastmap->get_pools().find(pgid.pool())->second;
@@ -3612,57 +3619,70 @@ bool PastIntervals::check_new_interval(
     old_pg_pool.convert_to_pg_shards(old_acting, &old_acting_shards);
 
     if (num_acting &&
-	i.primary != -1 &&
-	num_acting >= old_pg_pool.min_size &&
-        (*could_have_gone_active)(old_acting_shards)) {
+        i.primary != -1 &&
+        num_acting >= old_pg_pool.min_size &&
+        (*could_have_gone_active)(old_acting_shards))
+    {
       if (out)
-	*out << __func__ << " " << i
-	     << ": not rw,"
-	     << " up_thru " << lastmap->get_up_thru(i.primary)
-	     << " up_from " << lastmap->get_up_from(i.primary)
-	     << " last_epoch_clean " << last_epoch_clean
-	     << std::endl;
-      if (lastmap->get_up_thru(i.primary) >= i.first &&
-	  lastmap->get_up_from(i.primary) <= i.first) {
-	i.maybe_went_rw = true;
-	if (out)
-	  *out << __func__ << " " << i
-	       << " : primary up " << lastmap->get_up_from(i.primary)
-	       << "-" << lastmap->get_up_thru(i.primary)
-	       << " includes interval"
-	       << std::endl;
-      } else if (last_epoch_clean >= i.first &&
-		 last_epoch_clean <= i.last) {
-	// If the last_epoch_clean is included in this interval, then
-	// the pg must have been rw (for recovery to have completed).
-	// This is important because we won't know the _real_
-	// first_epoch because we stop at last_epoch_clean, and we
-	// don't want the oldest interval to randomly have
-	// maybe_went_rw false depending on the relative up_thru vs
-	// last_epoch_clean timing.
-	i.maybe_went_rw = true;
-	if (out)
-	  *out << __func__ << " " << i
-	       << " : includes last_epoch_clean " << last_epoch_clean
-	       << " and presumed to have been rw"
-	       << std::endl;
-      } else {
-	i.maybe_went_rw = false;
-	if (out)
-	  *out << __func__ << " " << i
-	       << " : primary up " << lastmap->get_up_from(i.primary)
-	       << "-" << lastmap->get_up_thru(i.primary)
-	       << " does not include interval"
-	       << std::endl;
+        *out << __func__ << " " << i
+          << ": not rw,"
+          << " up_thru " << lastmap->get_up_thru(i.primary)
+          << " up_from " << lastmap->get_up_from(i.primary)
+          << " last_epoch_clean " << last_epoch_clean
+          << " i.first " << i.first   //added by Yuanguo
+          << " i.last " << i.last     //added by Yuanguo
+          << std::endl;
+
+      if (lastmap->get_up_thru(i.primary) >= i.first &&  //Yuanguo: we had updated 'up_thru' in interval [12,17] ????
+          lastmap->get_up_from(i.primary) <= i.first)    //Yuanguo: primary was marked up before 12 ???
+      {
+        i.maybe_went_rw = true;
+        if (out)
+          *out << __func__ << " " << i
+            << " : primary up " << lastmap->get_up_from(i.primary)
+            << "-" << lastmap->get_up_thru(i.primary)
+            << " includes interval"
+            << std::endl;
       }
-    } else {
+      else if (last_epoch_clean >= i.first && last_epoch_clean <= i.last)
+      {
+        // If the last_epoch_clean is included in this interval, then
+        // the pg must have been rw (for recovery to have completed).
+        // This is important because we won't know the _real_
+        // first_epoch because we stop at last_epoch_clean, and we
+        // don't want the oldest interval to randomly have
+        // maybe_went_rw false depending on the relative up_thru vs
+        // last_epoch_clean timing.
+        i.maybe_went_rw = true;
+        if (out)
+          *out << __func__ << " " << i
+            << " : includes last_epoch_clean " << last_epoch_clean
+            << " and presumed to have been rw"
+            << std::endl;
+      }
+      else
+      {
+        i.maybe_went_rw = false;
+        if (out)
+          *out << __func__ << " " << i
+            << " : primary up " << lastmap->get_up_from(i.primary)
+            << "-" << lastmap->get_up_thru(i.primary)
+            << " does not include interval"
+            << std::endl;
+      }
+    }
+    else
+    {
       i.maybe_went_rw = false;
       if (out)
-	*out << __func__ << " " << i << " : acting set is too small" << std::endl;
+        *out << __func__ << " " << i << " : acting set is too small" << std::endl;
     }
+
     past_intervals->past_intervals->add_interval(old_pg_pool.ec_pool(), i);
     return true;
-  } else {
+  }
+  else
+  {
     return false;
   }
 }

@@ -809,7 +809,10 @@ bool PG::needs_backfill() const
 void PG::check_past_interval_bounds() const
 {
   //Yuanguo: return [oldest,  first-epoch-in-current-interval)
-  //  for example:   [3,7)  [7,15)  [15, current), then [3,15) is returned;
+  //  for example: 
+  //     paster_intervals:  [3,7] [8,14]
+  //     current interval:  [15-]
+  //  then [3,15) is returned;
   auto rpib = get_required_past_interval_bounds(
     info,
     osd->get_superblock().oldest_map);
@@ -834,10 +837,11 @@ void PG::check_past_interval_bounds() const
       assert(!past_intervals.empty());
     }
 
-    //Yuanguo: for example: [1,3)  [3,7)  [7,15)  [15, current),  then we have past intervals:
-    //          [1,3)     -- first = 1
-    //          [3,7)     
-    //          [7,15)    -- last = 15
+    //Yuanguo: for example:
+    //     paster_intervals:  [1,2]   //first = 1
+    //                        [3,7]
+    //                        [8,14]  //last = 14+1 = 15
+    //     current interval:  [15-]
     //and, [1,15) is returned;
     auto apib = past_intervals.get_bounds();
     if (apib.first > rpib.first) {
@@ -2747,6 +2751,8 @@ void PG::_update_blocked_by()
 
 void PG::publish_stats_to_osd()
 {
+  dout(15) << "Yuanguo: " << __func__ << dendl;
+
   if (!is_primary())
     return;
 
@@ -5419,16 +5425,20 @@ void PG::start_peering_interval(
     set_role(-1);
 
   // did acting, up, primary|acker change?
-  if (!lastmap) {
+  if (!lastmap)
+  {
     dout(10) << " no lastmap" << dendl;
     dirty_info = true;
     dirty_big_info = true;
     info.history.same_interval_since = osdmap->get_epoch();
-  } else {
+  }
+  else
+  {
     std::stringstream debug;
     assert(info.history.same_interval_since != 0);
     boost::scoped_ptr<IsPGRecoverablePredicate> recoverable(
       get_is_recoverable_predicate());
+
     bool new_interval = PastIntervals::check_new_interval(
       old_acting_primary.osd,
       new_acting_primary,
@@ -5444,35 +5454,43 @@ void PG::start_peering_interval(
       recoverable.get(),
       &past_intervals,
       &debug);
-    dout(10) << __func__ << ": check_new_interval output: "
-	     << debug.str() << dendl;
-    if (new_interval) {
-      if (osdmap->get_epoch() == osd->get_superblock().oldest_map &&
-	  info.history.last_epoch_clean < osdmap->get_epoch()) {
-	dout(10) << " map gap, clearing past_intervals and faking" << dendl;
-	// our information is incomplete and useless; someone else was clean
-	// after everything we know if osdmaps were trimmed.
-	past_intervals.clear();
-      } else {
-	dout(10) << " noting past " << past_intervals << dendl;
+
+    dout(10) << __func__ << ": check_new_interval output: " << debug.str() << dendl;
+
+    if (new_interval)
+    {
+      if (osdmap->get_epoch() == osd->get_superblock().oldest_map && 
+          info.history.last_epoch_clean < osdmap->get_epoch())
+      {
+        dout(10) << " map gap, clearing past_intervals and faking" << dendl;
+        // our information is incomplete and useless; someone else was clean
+        // after everything we know if osdmaps were trimmed.
+        past_intervals.clear();
       }
+      else
+      {
+        dout(10) << " noting past " << past_intervals << dendl;
+      }
+
       dirty_info = true;
       dirty_big_info = true;
       info.history.same_interval_since = osdmap->get_epoch();
-      if (info.pgid.pgid.is_split(lastmap->get_pg_num(info.pgid.pgid.pool()),
-				  osdmap->get_pg_num(info.pgid.pgid.pool()),
-				  nullptr)) {
-	info.history.last_epoch_split = osdmap->get_epoch();
+
+      if (info.pgid.pgid.is_split(lastmap->get_pg_num(info.pgid.pgid.pool()), osdmap->get_pg_num(info.pgid.pgid.pool()), nullptr))
+      {
+        info.history.last_epoch_split = osdmap->get_epoch();
       }
     }
   }
 
-  if (old_up_primary != up_primary ||
-      oldup != up) {
+  if (old_up_primary != up_primary || oldup != up)
+  {
     info.history.same_up_since = osdmap->get_epoch();
   }
+
   // this comparison includes primary rank via pg_shard_t
-  if (old_acting_primary != get_primary()) {
+  if (old_acting_primary != get_primary()) 
+  {
     info.history.same_primary_since = osdmap->get_epoch();
   }
 
@@ -5500,7 +5518,8 @@ void PG::start_peering_interval(
   scrub_queued = false;
 
   // reset primary state?
-  if (was_old_primary || is_primary()) {
+  if (was_old_primary || is_primary())
+  {
     osd->remove_want_pg_temp(info.pgid.pgid);
   }
   clear_primary_state();
@@ -5516,10 +5535,11 @@ void PG::start_peering_interval(
   // should we tell the primary we are here?
   send_notify = !is_primary();
 
-  if (role != oldrole ||
-      was_old_primary != is_primary()) {
+  if (role != oldrole || was_old_primary != is_primary())
+  {
     // did primary change?
-    if (was_old_primary != is_primary()) {
+    if (was_old_primary != is_primary())
+    {
       state_clear(PG_STATE_CLEAN);
       clear_publish_stats();
     }
@@ -5528,29 +5548,35 @@ void PG::start_peering_interval(
 
     // take active waiters
     requeue_ops(waiting_for_peered);
-
-  } else {
+  } 
+  else
+  {
     // no role change.
     // did primary change?
-    if (get_primary() != old_acting_primary) {    
+    if (get_primary() != old_acting_primary)
+    {
       dout(10) << *this << " " << oldacting << " -> " << acting 
 	       << ", acting primary " 
 	       << old_acting_primary << " -> " << get_primary() 
 	       << dendl;
-    } else {
+    }
+    else
+    {
       // primary is the same.
-      if (is_primary()) {
-	// i am (still) primary. but my replica set changed.
-	state_clear(PG_STATE_CLEAN);
-	  
-	dout(10) << oldacting << " -> " << acting
-		 << ", replicas changed" << dendl;
+      if (is_primary())
+      {
+        // i am (still) primary. but my replica set changed.
+        state_clear(PG_STATE_CLEAN);
+
+        dout(10) << oldacting << " -> " << acting << ", replicas changed" << dendl;
       }
     }
   }
+
   cancel_recovery();
 
-  if (acting.empty() && !up.empty() && up_primary == pg_whoami) {
+  if (acting.empty() && !up.empty() && up_primary == pg_whoami)
+  {
     dout(10) << " acting empty, but i am up[0], clearing pg_temp" << dendl;
     osd->queue_want_pg_temp(info.pgid.pgid, acting);
   }
@@ -6212,6 +6238,8 @@ boost::statechart::result PG::RecoveryState::Reset::react(const AdvMap& advmap)
 boost::statechart::result PG::RecoveryState::Reset::react(const ActMap&)
 {
   PG *pg = context< RecoveryMachine >().pg;
+  ldout(pg->cct, 10) << "Yuanguo: Reset ActMap" << dendl;
+
   if (pg->should_send_notify() && pg->get_primary().osd >= 0) {
     context< RecoveryMachine >().send_notify(
       pg->get_primary(),
@@ -7447,6 +7475,8 @@ boost::statechart::result PG::RecoveryState::ReplicaActive::react(
 boost::statechart::result PG::RecoveryState::ReplicaActive::react(const MInfoRec& infoevt)
 {
   PG *pg = context< RecoveryMachine >().pg;
+  ldout(pg->cct, 10) << "Yuanguo: ReplicaActive MInfoRec, from " << infoevt.from << dendl;
+
   pg->proc_primary_info(*context<RecoveryMachine>().get_cur_transaction(),
 			infoevt.info);
   return discard_event();
@@ -7466,6 +7496,8 @@ boost::statechart::result PG::RecoveryState::ReplicaActive::react(const MLogRec&
 boost::statechart::result PG::RecoveryState::ReplicaActive::react(const ActMap&)
 {
   PG *pg = context< RecoveryMachine >().pg;
+  ldout(pg->cct, 10) << "Yuanguo: ReplicaActive ActMap" << dendl;
+
   if (pg->should_send_notify() && pg->get_primary().osd >= 0) {
     context< RecoveryMachine >().send_notify(
       pg->get_primary(),
@@ -7600,6 +7632,8 @@ boost::statechart::result PG::RecoveryState::Stray::react(const MQuery& query)
 boost::statechart::result PG::RecoveryState::Stray::react(const ActMap&)
 {
   PG *pg = context< RecoveryMachine >().pg;
+  ldout(pg->cct, 10) << "Yuanguo: Stray ActMap" << dendl;
+
   if (pg->should_send_notify() && pg->get_primary().osd >= 0) {
     context< RecoveryMachine >().send_notify(
       pg->get_primary(),
@@ -8236,6 +8270,8 @@ PG::RecoveryState::WaitUpThru::WaitUpThru(my_context ctx)
 boost::statechart::result PG::RecoveryState::WaitUpThru::react(const ActMap& am)
 {
   PG *pg = context< RecoveryMachine >().pg;
+  ldout(pg->cct, 10) << "Yuanguo: WaitUpThru ActMap" << dendl;
+
   if (!pg->need_up_thru) {
     post_event(Activate(pg->get_osdmap()->get_epoch()));
   }

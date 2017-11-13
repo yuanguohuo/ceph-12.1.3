@@ -8598,6 +8598,11 @@ struct C_OpenPGs : public Context {
 void OSD::dispatch_context_transaction(PG::RecoveryCtx &ctx, PG *pg,
                                        ThreadPool::TPHandle *handle)
 {
+  dout(20) << "Yuanguo: " << __func__ << 
+       " transaction_empty=" << ctx.transaction->empty() << 
+       " applied_empty=" << ctx.on_applied->empty() <<
+       " on_safe_empty=" << ctx.on_safe->empty() << endl; 
+
   if (!ctx.transaction->empty()) {
     if (!ctx.created_pgs.empty()) {
       ctx.on_applied->add(new C_OpenPGs(ctx.created_pgs, store, this));
@@ -8617,6 +8622,11 @@ void OSD::dispatch_context_transaction(PG::RecoveryCtx &ctx, PG *pg,
 void OSD::dispatch_context(PG::RecoveryCtx &ctx, PG *pg, OSDMapRef curmap,
                            ThreadPool::TPHandle *handle)
 {
+  dout(20) << "Yuanguo: " << __func__ << 
+       " transaction_empty=" << ctx.transaction->empty() << 
+       " applied_empty=" << ctx.on_applied->empty() <<
+       " on_safe_empty=" << ctx.on_safe->empty() << endl; 
+
   if (service.get_osdmap()->is_up(whoami) &&
       is_active()) {
     do_notifies(*ctx.notify_list, curmap);
