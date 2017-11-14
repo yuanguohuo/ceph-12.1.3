@@ -948,20 +948,28 @@ PastIntervals::PriorSet PG::build_prior()
     get_pgbackend()->get_is_recoverable_predicate(),
     [&](epoch_t start, int osd, epoch_t *lost_at) {
       const osd_info_t *pinfo = 0;
-      if (osdmap.exists(osd)) {
-	pinfo = &osdmap.get_info(osd);
-	if (lost_at)
-	  *lost_at = pinfo->lost_at;
+      if (osdmap.exists(osd))
+      {
+        pinfo = &osdmap.get_info(osd);
+        if (lost_at)
+          *lost_at = pinfo->lost_at;
       }
 
-      if (osdmap.is_up(osd)) {
-	return PastIntervals::UP;
-      } else if (!pinfo) {
-	return PastIntervals::DNE;
-      } else if (pinfo->lost_at > start) {
-	return PastIntervals::LOST;
-      } else {
-	return PastIntervals::DOWN;
+      if (osdmap.is_up(osd))
+      {
+        return PastIntervals::UP;
+      }
+      else if (!pinfo)
+      {
+        return PastIntervals::DNE;
+      }
+      else if (pinfo->lost_at > start)
+      {
+        return PastIntervals::LOST;
+      }
+      else
+      {
+        return PastIntervals::DOWN;
       }
     },
     up,
@@ -3153,6 +3161,8 @@ int PG::peek_map_epoch(ObjectStore *store,
 
 void PG::write_if_dirty(ObjectStore::Transaction& t)
 {
+  dout(10) << "Yuanguo: " << __func__ << " dirty_big_info=" << dirty_big_info << " dirty_info=" << dirty_info << dendl;
+
   map<string,bufferlist> km;
   if (dirty_big_info || dirty_info)
     prepare_write_info(&km);

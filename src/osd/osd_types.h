@@ -2942,39 +2942,47 @@ PastIntervals::PriorSet::PriorSet(
   // but because we want their pg_info to inform choose_acting(), and
   // so that we know what they do/do not have explicitly before
   // sending them any new info/logs/whatever.
-  for (unsigned i = 0; i < acting.size(); i++) {
+  for (unsigned i = 0; i < acting.size(); i++)
+  {
     if (acting[i] != 0x7fffffff /* CRUSH_ITEM_NONE, can't import crush.h here */)
       probe.insert(pg_shard_t(acting[i], ec_pool ? shard_id_t(i) : shard_id_t::NO_SHARD));
   }
+
   // It may be possible to exclude the up nodes, but let's keep them in
   // there for now.
-  for (unsigned i = 0; i < up.size(); i++) {
+  for (unsigned i = 0; i < up.size(); i++)
+  {
     if (up[i] != 0x7fffffff /* CRUSH_ITEM_NONE, can't import crush.h here */)
       probe.insert(pg_shard_t(up[i], ec_pool ? shard_id_t(i) : shard_id_t::NO_SHARD));
   }
 
+  ldpp_dout(dpp, 10) << "Yuanguo: " << __func__ << "past_intervals: " << past_intervals << dendl;
+
   set<pg_shard_t> all_probe = past_intervals.get_all_probe(ec_pool);
   ldpp_dout(dpp, 10) << "build_prior all_probe " << all_probe << dendl;
-  for (auto &&i: all_probe) {
-    switch (f(0, i.osd, nullptr)) {
-    case UP: {
-      probe.insert(i);
-      break;
-    }
-    case DNE:
-    case LOST:
-    case DOWN: {
-      down.insert(i.osd);
-      break;
-    }
+
+  for (auto &&i: all_probe)
+  {
+    switch (f(0, i.osd, nullptr))
+    {
+      case UP: 
+        {
+          probe.insert(i);
+          break;
+        }
+      case DNE:
+      case LOST:
+      case DOWN:
+        {
+          down.insert(i.osd);
+          break;
+        }
     }
   }
 
   //Yuanguo: this function iteraters each interval and checks it; the way it checks an interval 
   //         is defined by the lambda function below;
-  past_intervals.iterate_mayberw_back_to(
-    ec_pool,
-    last_epoch_started,
+  past_intervals.iterate_mayberw_back_to(ec_pool, last_epoch_started,
     //Yuanguo: this function checks a given interval in this way:
     //    1. figure out the 'up set' and 'down set'; 
     //    2. check if the 'up set' is enough for peering. for replicated pg,
@@ -2993,49 +3001,56 @@ PastIntervals::PriorSet::PriorSet(
       bool any_down_now = false;
 
       // consider ACTING osds
-      for (auto &&so: acting) {
-	epoch_t lost_at = 0;
-	switch (f(start, so.osd, &lost_at)) {
-	case UP: {
-	  // include past acting osds if they are up.
-	  up_now.insert(so);
-	  break;
-	}
-	case DNE: {
-	  ldpp_dout(dpp, 10) << "build_prior  prior osd." << so.osd
-			     << " no longer exists" << dendl;
-	  break;
-	}
-	case LOST: {
-	  ldpp_dout(dpp, 10) << "build_prior  prior osd." << so.osd
-			     << " is down, but lost_at " << lost_at << dendl;
-	  up_now.insert(so);
-	  break;
-	}
-	case DOWN: {
-	  ldpp_dout(dpp, 10) << "build_prior  prior osd." << so.osd
-			     << " is down" << dendl;
-	  candidate_blocked_by[so.osd] = lost_at;
-	  any_down_now = true;
-	  break;
-	}
-	}
+      for (auto &&so: acting)
+      {
+        epoch_t lost_at = 0;
+        switch (f(start, so.osd, &lost_at))
+        {
+          case UP:
+            {
+              // include past acting osds if they are up.
+              up_now.insert(so);
+              break;
+            }
+          case DNE:
+            {
+              ldpp_dout(dpp, 10) << "build_prior  prior osd." << so.osd
+                << " no longer exists" << dendl;
+              break;
+            }
+          case LOST:
+            {
+              ldpp_dout(dpp, 10) << "build_prior  prior osd." << so.osd
+                << " is down, but lost_at " << lost_at << dendl;
+              up_now.insert(so);
+              break;
+            }
+          case DOWN:
+            {
+              ldpp_dout(dpp, 10) << "build_prior  prior osd." << so.osd
+                << " is down" << dendl;
+              candidate_blocked_by[so.osd] = lost_at;
+              any_down_now = true;
+              break;
+            }
+        }
       }
 
       // if not enough osds survived this interval, and we may have gone rw,
       // then we need to wait for one of those osds to recover to
       // ensure that we haven't lost any information.
-      if (!(*pcontdec)(up_now) && any_down_now) {
-	// fixme: how do we identify a "clean" shutdown anyway?
-	ldpp_dout(dpp, 10) << "build_prior  possibly went active+rw,"
-			   << " insufficient up; including down osds" << dendl;
-	assert(!candidate_blocked_by.empty());
-	pg_down = true;
-	blocked_by.insert(
-	  candidate_blocked_by.begin(),
-	  candidate_blocked_by.end());
+      if (!(*pcontdec)(up_now) && any_down_now)
+      {
+	      // fixme: how do we identify a "clean" shutdown anyway?
+        ldpp_dout(dpp, 10) << "build_prior  possibly went active+rw,"
+          << " insufficient up; including down osds" << dendl;
+
+	      assert(!candidate_blocked_by.empty());
+
+        pg_down = true;
+        blocked_by.insert(candidate_blocked_by.begin(), candidate_blocked_by.end());
       }
-    });
+  });
 
   ldpp_dout(dpp, 10) << "build_prior final: probe " << probe
 	   << " down " << down
