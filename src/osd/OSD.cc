@@ -8601,7 +8601,7 @@ void OSD::dispatch_context_transaction(PG::RecoveryCtx &ctx, PG *pg,
   dout(20) << "Yuanguo: " << __func__ << 
        " transaction_empty=" << ctx.transaction->empty() << 
        " applied_empty=" << ctx.on_applied->empty() <<
-       " on_safe_empty=" << ctx.on_safe->empty() << endl; 
+       " on_safe_empty=" << ctx.on_safe->empty() << dendl; 
 
   if (!ctx.transaction->empty()) {
     if (!ctx.created_pgs.empty()) {
@@ -8625,7 +8625,7 @@ void OSD::dispatch_context(PG::RecoveryCtx &ctx, PG *pg, OSDMapRef curmap,
   dout(20) << "Yuanguo: " << __func__ << 
        " transaction_empty=" << ctx.transaction->empty() << 
        " applied_empty=" << ctx.on_applied->empty() <<
-       " on_safe_empty=" << ctx.on_safe->empty() << endl; 
+       " on_safe_empty=" << ctx.on_safe->empty() << dendl; 
 
   if (service.get_osdmap()->is_up(whoami) &&
       is_active()) {
