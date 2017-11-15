@@ -444,10 +444,10 @@ void PG::proc_replica_log(
   peer_missing[from].claim(omissing);
 }
 
-//Yuanguo: I am primary, and I am handling a notify from a replica;
+//Yuanguo: I am primary, and I am handling a notify from a peer(replica);
 //    from        : the replia;
 //    oinfo       : the pg info sent by the replica;
-//    send_epoch  : the epoch of the replica when it sent the pg info;
+//    send_epoch  : the epoch of the peer(replica) when it sent me the pg info;
 bool PG::proc_replica_info(
   pg_shard_t from, const pg_info_t &oinfo, epoch_t send_epoch)
 {
@@ -1060,32 +1060,49 @@ map<pg_shard_t, pg_info_t>::const_iterator PG::find_best_info(
   bool *history_les_bound) const
 {
   assert(history_les_bound);
+
   /* See doc/dev/osd_internals/last_epoch_started.rst before attempting
    * to make changes to this process.  Also, make sure to update it
    * when you find bugs! */
   eversion_t min_last_update_acceptable = eversion_t::max();
+
+  //Yuanguo: the maximum 'last_epoch_started' in 'infos'; this includes pg_info_t::history.last_epoch_started (it's
+  //     complete for sure) and pg_info_t::last_epoch_started who is complete;
   epoch_t max_last_epoch_started_found = 0;
-  for (map<pg_shard_t, pg_info_t>::const_iterator i = infos.begin();
-       i != infos.end();
-       ++i) {
+
+  for (map<pg_shard_t, pg_info_t>::const_iterator i = infos.begin(); i != infos.end(); ++i)
+  {
     if (!cct->_conf->osd_find_best_info_ignore_history_les &&
-	max_last_epoch_started_found < i->second.history.last_epoch_started) {
+        max_last_epoch_started_found < i->second.history.last_epoch_started)
+    {
       *history_les_bound = true;
       max_last_epoch_started_found = i->second.history.last_epoch_started;
     }
+
     if (!i->second.is_incomplete() &&
-	max_last_epoch_started_found < i->second.last_epoch_started) {
+        max_last_epoch_started_found < i->second.last_epoch_started)
+    {
       max_last_epoch_started_found = i->second.last_epoch_started;
     }
   }
-  for (map<pg_shard_t, pg_info_t>::const_iterator i = infos.begin();
-       i != infos.end();
-       ++i) {
-    if (max_last_epoch_started_found <= i->second.last_epoch_started) {
+
+  for (map<pg_shard_t, pg_info_t>::const_iterator i = infos.begin(); i != infos.end(); ++i)
+  {
+    //Yuanguo:
+    //'i' is incomplete;
+    //   or
+    //'i' is complete and has the max pg_info_t::last_epoch_started;
+    if (max_last_epoch_started_found <= i->second.last_epoch_started)
+    {
+      //Yuanguo: min_last_update_acceptable is the minimum pg_info_t::last_update in
+      //  incomplete infos
+      //     and
+      //  complete infos who has the max pg_info_t::last_epoch_started;   
       if (min_last_update_acceptable > i->second.last_update)
-	min_last_update_acceptable = i->second.last_update;
+        min_last_update_acceptable = i->second.last_update;
     }
   }
+
   if (min_last_update_acceptable == eversion_t::max())
     return infos.end();
 
@@ -1094,54 +1111,68 @@ map<pg_shard_t, pg_info_t>::const_iterator PG::find_best_info(
   // if there are multiples, prefer
   //  - a longer tail, if it brings another peer into log contiguity
   //  - the current primary
-  for (map<pg_shard_t, pg_info_t>::const_iterator p = infos.begin();
-       p != infos.end();
-       ++p) {
-    if (restrict_to_up_acting && !is_up(p->first) &&
-	!is_acting(p->first))
+  for (map<pg_shard_t, pg_info_t>::const_iterator p = infos.begin(); p != infos.end(); ++p)
+  {
+    if (restrict_to_up_acting && !is_up(p->first) && !is_acting(p->first))
       continue;
+
     // Only consider peers with last_update >= min_last_update_acceptable
     if (p->second.last_update < min_last_update_acceptable)
       continue;
+
     // Disqualify anyone with a too old last_epoch_started
     if (p->second.last_epoch_started < max_last_epoch_started_found)
       continue;
+
     // Disqualify anyone who is incomplete (not fully backfilled)
     if (p->second.is_incomplete())
       continue;
-    if (best == infos.end()) {
+
+    if (best == infos.end())
+    {
       best = p;
       continue;
     }
+
     // Prefer newer last_update
-    if (pool.info.require_rollback()) {
+    if (pool.info.require_rollback())
+    {
       if (p->second.last_update > best->second.last_update)
-	continue;
-      if (p->second.last_update < best->second.last_update) {
-	best = p;
-	continue;
-      }
-    } else {
+        continue;
+
       if (p->second.last_update < best->second.last_update)
-	continue;
-      if (p->second.last_update > best->second.last_update) {
-	best = p;
-	continue;
+      {
+        best = p;
+        continue;
+      }
+    }
+    else
+    {
+      if (p->second.last_update < best->second.last_update)
+        continue;
+
+      if (p->second.last_update > best->second.last_update)
+      {
+        best = p;
+        continue;
       }
     }
 
     // Prefer longer tail
-    if (p->second.log_tail > best->second.log_tail) {
+    if (p->second.log_tail > best->second.log_tail)
+    {
       continue;
-    } else if (p->second.log_tail < best->second.log_tail) {
+    }
+    else if (p->second.log_tail < best->second.log_tail)
+    {
       best = p;
       continue;
     }
 
     // prefer current primary (usually the caller), all things being equal
-    if (p->first == pg_whoami) {
-      dout(10) << "calc_acting prefer osd." << p->first
-	       << " because it is current primary" << dendl;
+    if (p->first == pg_whoami)
+    {
+      dout(10) << "calc_acting prefer osd." << p->first << " because it is current primary" << dendl;
       best = p;
       continue;
     }
@@ -1254,43 +1285,45 @@ void PG::calc_replicated_acting(
   ss << "calc_acting newest update on osd." << auth_log_shard->first
      << " with " << auth_log_shard->second
      << (restrict_to_up_acting ? " restrict_to_up_acting" : "") << std::endl;
+
   pg_shard_t auth_log_shard_id = auth_log_shard->first;
   
   // select primary
   map<pg_shard_t,pg_info_t>::const_iterator primary;
   if (up.size() &&
-      !all_info.find(up_primary)->second.is_incomplete() &&
-      all_info.find(up_primary)->second.last_update >=
-        auth_log_shard->second.log_tail) {
+      !all_info.find(up_primary)->second.is_incomplete() &&  //Yuanguo: up_primary(current up-primary of this PG) is complete
+      all_info.find(up_primary)->second.last_update >= auth_log_shard->second.log_tail)  //Yuanguo: and its last_update is contiguous with authoritative log;
+  {
     ss << "up_primary: " << up_primary << ") selected as primary" << std::endl;
     primary = all_info.find(up_primary); // prefer up[0], all thing being equal
-  } else {
+  }
+  else
+  {
     assert(!auth_log_shard->second.is_incomplete());
-    ss << "up[0] needs backfill, osd." << auth_log_shard_id
-       << " selected as primary instead" << std::endl;
+    ss << "up[0] needs backfill, osd." << auth_log_shard_id << " selected as primary instead" << std::endl;
     primary = auth_log_shard;
   }
 
-  ss << "calc_acting primary is osd." << primary->first
-     << " with " << primary->second << std::endl;
+  ss << "calc_acting primary is osd." << primary->first << " with " << primary->second << std::endl;
+
   *want_primary = primary->first;
   want->push_back(primary->first.osd);
   acting_backfill->insert(primary->first);
-  unsigned usable = 1;  //Yuanguo: how many in 'want'?
+  unsigned usable = 1;  //Yuanguo: how many OSDs in 'want'?
 
   // select replicas that have log contiguity with primary.
   // prefer up, then acting, then any peer_info osds 
-  for (vector<int>::const_iterator i = up.begin();
-       i != up.end();
-       ++i) {
+  for (vector<int>::const_iterator i = up.begin(); i != up.end(); ++i)
+  {
     pg_shard_t up_cand = pg_shard_t(*i, shard_id_t::NO_SHARD);
+
     if (up_cand == primary->first)
       continue;
+
     const pg_info_t &cur_info = all_info.find(up_cand)->second;
     if (cur_info.is_incomplete() ||
-      cur_info.last_update < MIN(
-	primary->second.log_tail,
-	auth_log_shard->second.log_tail)) {
+        cur_info.last_update < MIN(primary->second.log_tail, auth_log_shard->second.log_tail)) //Yuanguo: its last_update is NOT contiguous with authoritative log;
+    {
       /* We include auth_log_shard->second.log_tail because in GetLog,
        * we will request logs back to the min last_update over our
        * acting_backfill set, which will result in our log being extended
@@ -1299,7 +1332,9 @@ void PG::calc_replicated_acting(
       ss << " shard " << up_cand << " (up) backfill " << cur_info << std::endl;
       backfill->insert(up_cand);
       acting_backfill->insert(up_cand);
-    } else {
+    }
+    else
+    {
       want->push_back(*i);
       acting_backfill->insert(up_cand);
       usable++;
@@ -1308,68 +1343,73 @@ void PG::calc_replicated_acting(
   }
 
   // This no longer has backfill OSDs, but they are covered above.
-  for (vector<int>::const_iterator i = acting.begin();
-       i != acting.end();
-       ++i) {
+  for (vector<int>::const_iterator i = acting.begin(); i != acting.end(); ++i)
+  {
     pg_shard_t acting_cand(*i, shard_id_t::NO_SHARD);
-    if (usable >= size)
-      break;
+
+    if (usable >= size) //Yuanguo: we have got enough OSDs compared to 'pg size';
+    break;
 
     // skip up osds we already considered above
     if (acting_cand == primary->first)
       continue;
+
     vector<int>::const_iterator up_it = find(up.begin(), up.end(), acting_cand.osd);
-    if (up_it != up.end())
+    if (up_it != up.end()) //Yuanguo: we have processed just now (when we processed 'up' set)
       continue;
 
     const pg_info_t &cur_info = all_info.find(acting_cand)->second;
     if (cur_info.is_incomplete() ||
-	cur_info.last_update < primary->second.log_tail) {
-      ss << " shard " << acting_cand << " (stray) REJECTED "
-	       << cur_info << std::endl;
-    } else {
+        cur_info.last_update < primary->second.log_tail) //Yuanguo: its last_update is NOT contiguous with primary log (why not compare with authoritative log?);
+    {
+      ss << " shard " << acting_cand << " (stray) REJECTED " << cur_info << std::endl;
+    }
+    else
+    {
       want->push_back(*i);
       acting_backfill->insert(acting_cand);
-      ss << " shard " << acting_cand << " (stray) accepted "
-	 << cur_info << std::endl;
+      ss << " shard " << acting_cand << " (stray) accepted " << cur_info << std::endl;
       usable++;
     }
   }
   
   //Yuanguo: till now, 
   //    want            :  up(complete and contiguous) + acting(complete and contiguous)
-  //    acting_backfill :  up(all) + acting(complete and contiguous)
   //    backfill        :  up(incomplete or in-contiguous)
+  //    acting_backfill :  want + backfill 
 
-  if (restrict_to_up_acting) {
+  if (restrict_to_up_acting) //Yuanguo: we're restricted to select OSDs from 'up' set and 'acting' set;
+  {
     return;
   }
-  for (map<pg_shard_t,pg_info_t>::const_iterator i = all_info.begin();
-       i != all_info.end();
-       ++i) {
-    if (usable >= size)
-      break;
+
+  for (map<pg_shard_t,pg_info_t>::const_iterator i = all_info.begin(); i != all_info.end(); ++i)
+  {
+    if (usable >= size)  //Yuanguo: we have got enough OSDs compared to 'pg size';
+    break;
 
     // skip up osds we already considered above
     if (i->first == primary->first)
       continue;
+
     vector<int>::const_iterator up_it = find(up.begin(), up.end(), i->first.osd);
-    if (up_it != up.end()) //Yuanguo: skip those in 'up'
-      continue;
-    vector<int>::const_iterator acting_it = find(
-      acting.begin(), acting.end(), i->first.osd);
-    if (acting_it != acting.end())  //Yuanguo: skip those in 'acting'
-      continue;
+    if (up_it != up.end()) //Yuanguo: skip those in 'up', because we have processed them just now;
+    continue;
+
+    vector<int>::const_iterator acting_it = find(acting.begin(), acting.end(), i->first.osd);
+    if (acting_it != acting.end())  //Yuanguo: skip those in 'acting', because we have processed them just now;
+    continue;
 
     if (i->second.is_incomplete() ||
-	i->second.last_update < primary->second.log_tail) {
-      ss << " shard " << i->first << " (stray) REJECTED "
-	 << i->second << std::endl;
-    } else {
+        i->second.last_update < primary->second.log_tail) //Yuanguo: its last_update is NOT contiguous with primary log (why not compare with authoritative log?);
+    {
+      ss << " shard " << i->first << " (stray) REJECTED " << i->second << std::endl;
+    }
+    else
+    {
       want->push_back(i->first.osd);
       acting_backfill->insert(i->first);
-      ss << " shard " << i->first << " (stray) accepted "
-	 << i->second << std::endl;
+      ss << " shard " << i->first << " (stray) accepted " << i->second << std::endl;
       usable++;
     }
   }
@@ -1377,10 +1417,8 @@ void PG::calc_replicated_acting(
   //Yuanguo:
   //    want            :  up(complete and contiguous) + acting(complete and contiguous) + stray(complete and contiguous), it
   //                       is the ideal 'acting set' based on the peer infos we have got;
-  //    acting_backfill :  up(all) + acting(complete and contiguous) + stray(complete and contiguous)
   //    backfill        :  up(incomplete or in-contiguous)
-  //
-  //    thus,   acting_backfill = want + backfill     ; maybe 'want' is better to renamed to 'acting';
+  //    acting_backfill :  want + backfill
 }
 
 /**
@@ -1405,23 +1443,24 @@ bool PG::choose_acting(pg_shard_t &auth_log_shard_id,
   map<pg_shard_t, pg_info_t> all_info(peer_info.begin(), peer_info.end());
   all_info[pg_whoami] = info;
 
-  for (map<pg_shard_t, pg_info_t>::iterator p = all_info.begin();
-       p != all_info.end();
-       ++p) {
+  for (map<pg_shard_t, pg_info_t>::iterator p = all_info.begin(); p != all_info.end(); ++p)
+  {
     dout(10) << "calc_acting osd." << p->first << " " << p->second << dendl;
   }
 
-  map<pg_shard_t, pg_info_t>::const_iterator auth_log_shard =
-    find_best_info(all_info, restrict_to_up_acting, history_les_bound);
+  map<pg_shard_t, pg_info_t>::const_iterator auth_log_shard = find_best_info(all_info, restrict_to_up_acting, history_les_bound);
 
-  if (auth_log_shard == all_info.end()) {
-    if (up != acting) {
-      dout(10) << "choose_acting no suitable info found (incomplete backfills?),"
-	       << " reverting to up" << dendl;
+  if (auth_log_shard == all_info.end())
+  {
+    if (up != acting)
+    {
+      dout(10) << "choose_acting no suitable info found (incomplete backfills?)," << " reverting to up" << dendl;
       want_acting = up;
       vector<int> empty;
       osd->queue_want_pg_temp(info.pgid.pgid, empty);
-    } else {
+    }
+    else
+    {
       dout(10) << "choose_acting failed" << dendl;
       assert(want_acting.empty());
     }
@@ -1436,9 +1475,10 @@ bool PG::choose_acting(pg_shard_t &auth_log_shard_id,
   //    want_backfill        : the osds who need backfill;
   //    want_acting_backfill : want + want_backfill;
   set<pg_shard_t> want_backfill, want_acting_backfill;
-  vector<int> want;  //Yuanguo: the ideal 'acting set' based on the peer infos we have got;
+  vector<int> want;
   pg_shard_t want_primary;
   stringstream ss;
+
   if (!pool.info.ec_pool())
     calc_replicated_acting(
       auth_log_shard,
@@ -1469,12 +1509,16 @@ bool PG::choose_acting(pg_shard_t &auth_log_shard_id,
       &want_acting_backfill,
       &want_primary,
       ss);
+
   dout(10) << ss.str() << dendl;
 
   unsigned num_want_acting = 0;
   set<pg_shard_t> have;
-  for (int i = 0; i < (int)want.size(); ++i) {
-    if (want[i] != CRUSH_ITEM_NONE) {
+
+  for (int i = 0; i < (int)want.size(); ++i)
+  {
+    if (want[i] != CRUSH_ITEM_NONE)
+    {
       ++num_want_acting;
       have.insert(
         pg_shard_t(
@@ -1487,42 +1531,46 @@ bool PG::choose_acting(pg_shard_t &auth_log_shard_id,
   // does not currently maintain rollbackability
   // Otherwise, we will go "peered", but not "active"
   if (num_want_acting < pool.info.min_size &&
-      (pool.info.ec_pool() ||
-       !cct->_conf->osd_allow_recovery_below_min_size)) {
+      (pool.info.ec_pool() || !cct->_conf->osd_allow_recovery_below_min_size))
+  {
     want_acting.clear();
     dout(10) << "choose_acting failed, below min size" << dendl;
     return false;
   }
 
   /* Check whether we have enough acting shards to later perform recovery */
-  boost::scoped_ptr<IsPGRecoverablePredicate> recoverable_predicate(
-    get_pgbackend()->get_is_recoverable_predicate());
-  if (!(*recoverable_predicate)(have)) {
+  boost::scoped_ptr<IsPGRecoverablePredicate> recoverable_predicate(get_pgbackend()->get_is_recoverable_predicate());
+  if (!(*recoverable_predicate)(have))
+  {
     want_acting.clear();
     dout(10) << "choose_acting failed, not recoverable" << dendl;
     return false;
   }
 
-  if (want != acting) {
-    dout(10) << "choose_acting want " << want << " != acting " << acting
-	     << ", requesting pg_temp change" << dendl;
+  //Yuanguo: the ideal 'acting set' is different from current 'acting set'
+  if (want != acting)
+  {
+    dout(10) << "choose_acting want " << want << " != acting " << acting << ", requesting pg_temp change" << dendl;
     want_acting = want;
 
-    if (want_acting == up) {
-      //Yuanguo: 'up' is the osd-set calculated from CRUSH; and want_acting (what we want to be acting-set) is 
+    if (want_acting == up)
+    {
+      //Yuanguo: 'up' is the osd-set calculated from CRUSH; and want_acting (the ideal 'acting set') is 
       //    the same as 'up'; so clear the pg temp. For example:
       // previously:
       //     up=[1,3,8]
       //     pg temp = [1,3,9]
       //     acting=[1,3,9]
-      // now, we find [1,3,8] (want_acting) is good, so remove pg temp;
+      // now, we find [1,3,8] (want) is good, so remove pg temp;
 
       // There can't be any pending backfill if
       // want is the same as crush map up OSDs.
       assert(want_backfill.empty());
       vector<int> empty;
       osd->queue_want_pg_temp(info.pgid.pgid, empty);
-    } else {
+    }
+    else
+    {
       //Yuanguo: 
       // previously:
       //     up=[1,3,8]
@@ -1531,6 +1579,7 @@ bool PG::choose_acting(pg_shard_t &auth_log_shard_id,
       // now, we find [1,3,7] (want_acting) is what we what, so change pg temp to [1,3,7];
       osd->queue_want_pg_temp(info.pgid.pgid, want);
     }
+
     return false;
   }
   //Yuanguo: if want == acting:
@@ -1541,30 +1590,34 @@ bool PG::choose_acting(pg_shard_t &auth_log_shard_id,
   //       was 'pg temp' for this PG. And the current ideal acting ('want') is the same as previous acting, so we keep
   //       the previous acting (and the 'pg temp');
 
-  want_acting.clear();
+
+  want_acting.clear(); //Yuanguo: the ideal acting set ('want') is the same as current 'acting set', so we clear want_acting;
   actingbackfill = want_acting_backfill;
   dout(10) << "actingbackfill is " << actingbackfill << dendl;
+
   assert(backfill_targets.empty() || backfill_targets == want_backfill);
-  if (backfill_targets.empty()) {
+
+  if (backfill_targets.empty())
+  {
     // Caller is GetInfo
-    backfill_targets = want_backfill;
+    backfill_targets = want_backfill; //Yuanguo: remember that want_backfill is OSD set who need backfill;
   }
+
   // Will not change if already set because up would have had to change
   // Verify that nothing in backfill is in stray_set
-  for (set<pg_shard_t>::iterator i = want_backfill.begin();
-      i != want_backfill.end();
-      ++i) {
+  for (set<pg_shard_t>::iterator i = want_backfill.begin(); i != want_backfill.end(); ++i)
+  {
     assert(stray_set.find(*i) == stray_set.end());
   }
-  dout(10) << "choose_acting want " << want << " (== acting) backfill_targets " 
-	   << want_backfill << dendl;
+
+  dout(10) << "choose_acting want " << want << " (== acting) backfill_targets " << want_backfill << dendl;
   return true;
 
   //Yuanguo: 
   //    want_acting          : the ideal 'acting set' based on the peer infos we have got (if it's different from
   //                           current acting)
   //    backfill_targets     : the osds who need backfill;
-  //    actingbackfilli      : want_acting + backfill_targets;
+  //    actingbackfill       : want_acting + backfill_targets;
 }
 
 /* Build the might_have_unfound set.
@@ -5229,31 +5282,37 @@ void PG::fulfill_log(
   pg_shard_t from, const pg_query_t &query, epoch_t query_epoch)
 {
   dout(10) << "log request from " << from << dendl;
+
   assert(from == primary);
   assert(query.type != pg_query_t::INFO);
-  ConnectionRef con = osd->get_con_osd_cluster(
-    from.osd, get_osdmap()->get_epoch());
+
+  ConnectionRef con = osd->get_con_osd_cluster(from.osd, get_osdmap()->get_epoch());
   if (!con) return;
 
   MOSDPGLog *mlog = new MOSDPGLog(
     from.shard, pg_whoami.shard,
     get_osdmap()->get_epoch(),
-    info, query_epoch);
-  mlog->missing = pg_log.get_missing();
+    info, query_epoch);  //Yuanguo: MOSDPGLog also contains pg info, not just pg log;
+
+  mlog->missing = pg_log.get_missing();  //Yuanguo: MOSDPGLog also contains 'missing', not just pg log;
 
   // primary -> other, when building master log
-  if (query.type == pg_query_t::LOG) {
-    dout(10) << " sending info+missing+log since " << query.since
-	     << dendl;
-    if (query.since != eversion_t() && query.since < pg_log.get_tail()) {
+  if (query.type == pg_query_t::LOG)
+  {
+    dout(10) << " sending info+missing+log since " << query.since << dendl;
+
+    if (query.since != eversion_t() && query.since < pg_log.get_tail())
+    {
       osd->clog->error() << info.pgid << " got broken pg_query_t::LOG since " << query.since
-			<< " when my log.tail is " << pg_log.get_tail()
-			<< ", sending full log instead";
+        << " when my log.tail is " << pg_log.get_tail()
+        << ", sending full log instead";
       mlog->log = pg_log.get_log();           // primary should not have requested this!!
-    } else
+    }
+    else
       mlog->log.copy_after(pg_log.get_log(), query.since);
   }
-  else if (query.type == pg_query_t::FULLLOG) {
+  else if (query.type == pg_query_t::FULLLOG)
+  {
     dout(10) << " sending info+missing+full log" << dendl;
     mlog->log = pg_log.get_log();
   }
@@ -5908,8 +5967,15 @@ void PG::handle_peering_event(CephPeeringEvtRef evt, RecoveryCtx *rctx)
     peering_waiters.push_back(evt);
     return;
   }
+
+  //Yuanguo: check if 
+  //    last_peering_reset > epoch_requested (the epoch at which I queried peer)
+  //       or
+  //    last_peering_reset > epoch_sent (the epoch at which peer replied me)
+  //If either one is true, the reply is out-dated, and we can discard it;
   if (old_peering_evt(evt))
     return;
+
   recovery_state.handle_event(evt, rctx);
 }
 
@@ -6093,6 +6159,7 @@ boost::statechart::result PG::RecoveryState::Initial::react(const Load& l)
 
 boost::statechart::result PG::RecoveryState::Initial::react(const MNotifyRec& notify)
 {
+  ldout(pg->cct, 10) << "Yuanguo: Initial MNotifyRec, from " << notify.from << dendl;
   PG *pg = context< RecoveryMachine >().pg;
   pg->proc_replica_info(
     notify.from, notify.notify.info, notify.notify.epoch_sent);
@@ -7277,6 +7344,9 @@ boost::statechart::result PG::RecoveryState::Active::react(const ActMap&)
 boost::statechart::result PG::RecoveryState::Active::react(const MNotifyRec& notevt)
 {
   PG *pg = context< RecoveryMachine >().pg;
+
+  ldout(pg->cct, 10) << "Yuanguo: Active MNotifyRec, from " << notevt.from << dendl;
+
   assert(pg->is_primary());
   if (pg->peer_info.count(notevt.from)) {
     ldout(pg->cct, 10) << "Active: got notify from " << notevt.from
@@ -7525,6 +7595,9 @@ boost::statechart::result PG::RecoveryState::ReplicaActive::react(const ActMap&)
 boost::statechart::result PG::RecoveryState::ReplicaActive::react(const MQuery& query)
 {
   PG *pg = context< RecoveryMachine >().pg;
+
+  ldout(pg->cct, 10) << "Yuanguo: ReplicaActive MQuery, from " << query.from << dendl;
+
   if (query.query.type == pg_query_t::MISSING) {
     pg->update_history(query.query.history);
     pg->fulfill_log(query.from, query.query, query.query_epoch);
@@ -7619,20 +7692,28 @@ boost::statechart::result PG::RecoveryState::Stray::react(const MInfoRec& infoev
 boost::statechart::result PG::RecoveryState::Stray::react(const MQuery& query)
 {
   PG *pg = context< RecoveryMachine >().pg;
-  if (query.query.type == pg_query_t::INFO) {
+
+  ldout(pg->cct, 10) << "Yuanguo: Stray MQuery, from " << query.from << dendl;
+
+  if (query.query.type == pg_query_t::INFO)
+  {
     ldout(pg->cct, 10) << "Yuanguo: " << __func__ << " got info-query from primary osd." << query.from << dendl;
+
     pair<pg_shard_t, pg_info_t> notify_info;
     pg->update_history(query.query.history);
     pg->fulfill_info(query.from, query.query, notify_info);
+
     context< RecoveryMachine >().send_notify(
-      notify_info.first,
-      pg_notify_t(
-	notify_info.first.shard, pg->pg_whoami.shard,
-	query.query_epoch,
-	pg->get_osdmap()->get_epoch(),
-	notify_info.second),
-      pg->past_intervals);
-  } else {
+        notify_info.first,
+        pg_notify_t(notify_info.first.shard, pg->pg_whoami.shard,
+          query.query_epoch,
+          pg->get_osdmap()->get_epoch(),
+          notify_info.second
+        ),
+        pg->past_intervals);
+  }
+  else
+  {
     ldout(pg->cct, 10) << "Yuanguo: " << __func__ << " got log-query from primary osd." << query.from << dendl;
     pg->fulfill_log(query.from, query.query, query.query_epoch);
   }
@@ -7731,6 +7812,8 @@ boost::statechart::result PG::RecoveryState::GetInfo::react(const MNotifyRec& in
 {
   PG *pg = context< RecoveryMachine >().pg;
 
+  ldout(pg->cct, 10) << "Yuanguo: GetInfo MNotifyRec, from " << infoevt.from << dendl;
+
   set<pg_shard_t>::iterator p = peer_info_requested.find(infoevt.from);
   if (p != peer_info_requested.end()) {
     peer_info_requested.erase(p);
@@ -7738,8 +7821,8 @@ boost::statechart::result PG::RecoveryState::GetInfo::react(const MNotifyRec& in
   }
 
   epoch_t old_start = pg->info.history.last_epoch_started;
-  if (pg->proc_replica_info(
-	infoevt.from, infoevt.notify.info, infoevt.notify.epoch_sent)) {
+  if (pg->proc_replica_info(infoevt.from, infoevt.notify.info, infoevt.notify.epoch_sent))
+  {
     // we got something new ...
     PastIntervals::PriorSet &prior_set = context< Peering >().prior_set;
 
@@ -7748,7 +7831,8 @@ boost::statechart::result PG::RecoveryState::GetInfo::react(const MNotifyRec& in
     //     update_history -->
     //     info.history.merge
     // thus, the last_epoch_started might have been increased;
-    if (old_start < pg->info.history.last_epoch_started) {
+    if (old_start < pg->info.history.last_epoch_started)
+    {
       ldout(pg->cct, 10) << " last_epoch_started moved forward, rebuilding prior" << dendl;
       prior_set = pg->build_prior();
 
@@ -7756,28 +7840,34 @@ boost::statechart::result PG::RecoveryState::GetInfo::react(const MNotifyRec& in
       // peer_info_requested.  this is less expensive than restarting
       // peering (which would re-probe everyone).
       set<pg_shard_t>::iterator p = peer_info_requested.begin();
-      while (p != peer_info_requested.end()) {
-	if (prior_set.probe.count(*p) == 0) {
-	  ldout(pg->cct, 20) << " dropping osd." << *p << " from info_requested, no longer in probe set" << dendl;
-	  peer_info_requested.erase(p++);
-	} else {
-	  ++p;
-	}
+      while (p != peer_info_requested.end())
+      {
+        if (prior_set.probe.count(*p) == 0)
+        {
+          ldout(pg->cct, 20) << " dropping osd." << *p << " from info_requested, no longer in probe set" << dendl;
+          peer_info_requested.erase(p++);
+        }
+        else
+        {
+          ++p;
+        }
       }
       get_infos();
     }
-    ldout(pg->cct, 20) << "Adding osd: " << infoevt.from.osd << " peer features: "
-		       << hex << infoevt.features << dec << dendl;
+
+    ldout(pg->cct, 20) << "Adding osd: " << infoevt.from.osd << " peer features: " << hex << infoevt.features << dec << dendl;
     pg->apply_peer_features(infoevt.features);
 
     // are we done getting everything?
-    if (peer_info_requested.empty() && !prior_set.pg_down) {
+    if (peer_info_requested.empty() && !prior_set.pg_down)
+    {
       ldout(pg->cct, 20) << "Common peer features: " << hex << pg->get_min_peer_features() << dec << dendl;
       ldout(pg->cct, 20) << "Common acting features: " << hex << pg->get_min_acting_features() << dec << dendl;
       ldout(pg->cct, 20) << "Common upacting features: " << hex << pg->get_min_upacting_features() << dec << dendl;
       post_event(GotInfo());
     }
   }
+
   return discard_event();
 }
 
@@ -7829,18 +7919,24 @@ PG::RecoveryState::GetLog::GetLog(my_context ctx)
   PG *pg = context< RecoveryMachine >().pg;
 
   // adjust acting?
-  if (!pg->choose_acting(auth_log_shard, false,
-			 &context< Peering >().history_les_bound)) {
-    if (!pg->want_acting.empty()) {  //Yuanguo: we have ideal/better acting set, change to it;
+  if (!pg->choose_acting(auth_log_shard, false, &context< Peering >().history_les_bound))
+  {
+    if (!pg->want_acting.empty())  //Yuanguo: we have ideal/better acting set, change to it;
+    {
+      ldout(pg->cct, 10) << "Yuanguo: " << __func__ << " post_event(NeedActingChange())" << dendl;
       post_event(NeedActingChange());
-    } else {
+    }
+    else
+    {
+      ldout(pg->cct, 10) << "Yuanguo: " << __func__ << " post_event(IsIncomplete())" << dendl;
       post_event(IsIncomplete());
     }
     return;
   }
 
   // am i the best?
-  if (auth_log_shard == pg->pg_whoami) {
+  if (auth_log_shard == pg->pg_whoami)
+  {
     ldout(pg->cct, 10) << "Yuanguo: " << __func__ << " I (primary) am the best, my log will be authoritative" << dendl;
     post_event(GotLog());
     return;
@@ -7849,7 +7945,8 @@ PG::RecoveryState::GetLog::GetLog(my_context ctx)
   const pg_info_t& best = pg->peer_info[auth_log_shard];
 
   // am i broken?
-  if (pg->info.last_update < best.log_tail) {
+  if (pg->info.last_update < best.log_tail)
+  {
     ldout(pg->cct, 10) << " not contiguous with osd." << auth_log_shard << ", down" << dendl;
     post_event(IsIncomplete());
     return;
@@ -7858,10 +7955,11 @@ PG::RecoveryState::GetLog::GetLog(my_context ctx)
   // how much log to request?
   eversion_t request_log_from = pg->info.last_update;
   assert(!pg->actingbackfill.empty());
-  for (set<pg_shard_t>::iterator p = pg->actingbackfill.begin();
-       p != pg->actingbackfill.end();
-       ++p) {
+
+  for (set<pg_shard_t>::iterator p = pg->actingbackfill.begin(); p != pg->actingbackfill.end(); ++p)
+  {
     if (*p == pg->pg_whoami) continue;
+
     pg_info_t& ri = pg->peer_info[*p];
     if (ri.last_update < pg->info.log_tail && ri.last_update >= best.log_tail && //Yuanguo: not covered by my log but covered by best's log;
         ri.last_update < request_log_from) //Yuanguo: we need to cover all, so choose the minimum;
@@ -7869,7 +7967,7 @@ PG::RecoveryState::GetLog::GetLog(my_context ctx)
   }
 
   // how much?
-  ldout(pg->cct, 10) << " requesting log from osd." << auth_log_shard << dendl;
+  ldout(pg->cct, 10) << " requesting log from osd." << auth_log_shard << " request_log_from=" << request_log_from << dendl;
   context<RecoveryMachine>().send_query(
     auth_log_shard,
     pg_query_t(
@@ -7920,6 +8018,9 @@ boost::statechart::result PG::RecoveryState::GetLog::react(const GotLog&)
 {
   PG *pg = context< RecoveryMachine >().pg;
   ldout(pg->cct, 10) << "leaving GetLog" << dendl;
+
+  //Yuanguo: if my log is authoritative, I didn't send log-query but post GotLog directly, msg would be NULL; otherwise,
+  //   I sent a log-query and the peer replied me, msg would be not NULL, see GetLog::react(const MLogRec& logevt);
   if (msg) {
     ldout(pg->cct, 10) << "processing master log" << dendl;
     pg->proc_master_log(*context<RecoveryMachine>().get_cur_transaction(),
@@ -8133,11 +8234,12 @@ PG::RecoveryState::GetMissing::GetMissing(my_context ctx)
 
   PG *pg = context< RecoveryMachine >().pg;
   assert(!pg->actingbackfill.empty());
+
   eversion_t since;
-  for (set<pg_shard_t>::iterator i = pg->actingbackfill.begin();
-       i != pg->actingbackfill.end();
-       ++i) {
+  for (set<pg_shard_t>::iterator i = pg->actingbackfill.begin(); i != pg->actingbackfill.end(); ++i)
+  {
     if (*i == pg->get_primary()) continue;
+
     const pg_info_t& pi = pg->peer_info[*i];
     // reset this so to make sure the pg_missing_t is initialized and
     // has the correct semantics even if we don't need to get a
@@ -8148,19 +8250,23 @@ PG::RecoveryState::GetMissing::GetMissing(my_context ctx)
     if (pi.is_empty())
       continue;                                // no pg data, nothing divergent
 
-    if (pi.last_update < pg->pg_log.get_tail()) {
+    if (pi.last_update < pg->pg_log.get_tail())
+    {
       ldout(pg->cct, 10) << " osd." << *i << " is not contiguous, will restart backfill" << dendl;
       pg->peer_missing[*i].clear();
       continue;
     }
-    if (pi.last_backfill == hobject_t()) {
+
+    if (pi.last_backfill == hobject_t())
+    {
       ldout(pg->cct, 10) << " osd." << *i << " will fully backfill; can infer empty missing set" << dendl;
       pg->peer_missing[*i].clear();
       continue;
     }
 
     if (pi.last_update == pi.last_complete &&  // peer has no missing
-	pi.last_update == pg->info.last_update) {  // peer is up to date
+        pi.last_update == pg->info.last_update)  // peer is up to date
+    {
       // replica has no missing and identical log as us.  no need to
       // pull anything.
       // FIXME: we can do better here.  if last_update==last_complete we
@@ -8174,40 +8280,48 @@ PG::RecoveryState::GetMissing::GetMissing(my_context ctx)
     // get enough log to detect divergent updates.
     since.epoch = pi.last_epoch_started;
     assert(pi.last_update >= pg->info.log_tail);  // or else choose_acting() did a bad thing
-    if (pi.log_tail <= since) {
+
+    if (pi.log_tail <= since)
+    {
       ldout(pg->cct, 10) << " requesting log+missing since " << since << " from osd." << *i << dendl;
       context< RecoveryMachine >().send_query(
-	*i,
-	pg_query_t(
-	  pg_query_t::LOG,
-	  i->shard, pg->pg_whoami.shard,
-	  since, pg->info.history,
-	  pg->get_osdmap()->get_epoch()));
-    } else {
+          *i,
+          pg_query_t(
+            pg_query_t::LOG,
+            i->shard, pg->pg_whoami.shard,
+            since, pg->info.history,
+            pg->get_osdmap()->get_epoch()));
+    }
+    else
+    {
       ldout(pg->cct, 10) << " requesting fulllog+missing from osd." << *i
-			 << " (want since " << since << " < log.tail "
-			 << pi.log_tail << ")" << dendl;
+        << " (want since " << since << " < log.tail "
+        << pi.log_tail << ")" << dendl;
       context< RecoveryMachine >().send_query(
-	*i, pg_query_t(
-	  pg_query_t::FULLLOG,
-	  i->shard, pg->pg_whoami.shard,
-	  pg->info.history, pg->get_osdmap()->get_epoch()));
+          *i,
+          pg_query_t(
+            pg_query_t::FULLLOG,
+            i->shard, pg->pg_whoami.shard,
+            pg->info.history, pg->get_osdmap()->get_epoch()));
     }
     peer_missing_requested.insert(*i);
     pg->blocked_by.insert(i->osd);
   }
 
-  if (peer_missing_requested.empty()) {
-    if (pg->need_up_thru) {
-      ldout(pg->cct, 10) << " still need up_thru update before going active"
-			 << dendl;
+  if (peer_missing_requested.empty())
+  {
+    if (pg->need_up_thru)
+    {
+      ldout(pg->cct, 10) << " still need up_thru update before going active" << dendl;
       post_event(NeedUpThru());
       return;
     }
 
     // all good!
     post_event(Activate(pg->get_osdmap()->get_epoch()));
-  } else {
+  }
+  else
+  {
     pg->publish_stats_to_osd();
   }
 }
@@ -8219,14 +8333,16 @@ boost::statechart::result PG::RecoveryState::GetMissing::react(const MLogRec& lo
   peer_missing_requested.erase(logevt.from);
   pg->proc_replica_log(logevt.msg->info, logevt.msg->log, logevt.msg->missing, logevt.from);
   
-  if (peer_missing_requested.empty()) {
-    if (pg->need_up_thru) {
-      ldout(pg->cct, 10) << " still need up_thru update before going active"
-			 << dendl;
+  if (peer_missing_requested.empty())
+  {
+    if (pg->need_up_thru)
+    {
+      ldout(pg->cct, 10) << " still need up_thru update before going active" << dendl;
       post_event(NeedUpThru());
-    } else {
-      ldout(pg->cct, 10) << "Got last missing, don't need missing "
-			 << "posting Activate" << dendl;
+    }
+    else
+    {
+      ldout(pg->cct, 10) << "Got last missing, don't need missing " << "posting Activate" << dendl;
       post_event(Activate(pg->get_osdmap()->get_epoch()));
     }
   }

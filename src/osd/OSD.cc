@@ -4213,35 +4213,41 @@ int OSD::handle_pg_peering_evt(
 {
   dout(10) << "Yuanguo: " << __func__ << " pgid=" << pgid << " epoch=" << epoch << " event: " << evt->get_desc() << dendl;
 
-  if (service.splitting(pgid)) {
+  if (service.splitting(pgid))
+  {
     peering_wait_for_split[pgid].push_back(evt);
     return -EEXIST;
   }
 
   PG *pg = _lookup_lock_pg(pgid);
-  if (!pg) {
+  if (!pg)
+  {
     dout(10) << "Yuanguo: " << __func__ << " not found " << pgid << dendl;
 
     // same primary?
     if (!osdmap->have_pg_pool(pgid.pool()))
+    {
+      dout(10) << "Yuanguo: " << __func__ << " no such pool " << pgid.pool() << dendl;
       return -EINVAL;
+    }
+
     int up_primary, acting_primary;
     vector<int> up, acting;
-    osdmap->pg_to_up_acting_osds(
-      pgid.pgid, &up, &up_primary, &acting, &acting_primary);
+    osdmap->pg_to_up_acting_osds(pgid.pgid, &up, &up_primary, &acting, &acting_primary);
 
     pg_history_t history = orig_history;
-    bool valid_history = project_pg_history(
-      pgid, history, epoch, up, up_primary, acting, acting_primary);
+    bool valid_history = project_pg_history(pgid, history, epoch, up, up_primary, acting, acting_primary);
 
-    if (!valid_history || epoch < history.same_interval_since) {
+    if (!valid_history || epoch < history.same_interval_since)
+    {
       dout(10) << __func__ << pgid << " acting changed in "
 	       << history.same_interval_since << " (msg from " << epoch << ")"
 	       << dendl;
       return -EINVAL;
     }
 
-    if (service.splitting(pgid)) {
+    if (service.splitting(pgid))
+    {
       ceph_abort();
     }
 
@@ -4373,15 +4379,23 @@ int OSD::handle_pg_peering_evt(
       assert(0);
       return 0;
     }
-  } else {
+  }
+  else
+  {
     dout(10) << "Yuanguo: " << __func__ << " found " << pgid << dendl;
 
     // already had it.  did the mapping change?
-    if (epoch < pg->info.history.same_interval_since) {
+    // Yuanguo: 'epoch' is the epoch we sent the query (we are handling its reply now), so if
+    //                   epoch < pg->info.history.same_interval_since,  
+    //           we know that the query was sent in previous interval, not current interval;
+    if (epoch < pg->info.history.same_interval_since)
+    {
       dout(10) << *pg << __func__ << " acting changed in "
 	       << pg->info.history.same_interval_since
 	       << " (msg from " << epoch << ")" << dendl;
-    } else {
+    }
+    else
+    {
       dout(10) << "Yuanguo: " << __func__ << " enqueue " << evt->get_desc() << dendl;
       pg->queue_peering_event(evt);
     }
@@ -9064,9 +9078,8 @@ void OSD::handle_pg_query(OpRequestRef op)
 
   map< int, vector<pair<pg_notify_t, PastIntervals> > > notify_list;
 
-  for (auto it = m->pg_list.begin();
-       it != m->pg_list.end();
-       ++it) {
+  for (auto it = m->pg_list.begin(); it != m->pg_list.end(); ++it)
+  {
     spg_t pgid = it->first;
 
     dout(10) << "Yuanguo: " << __func__ << " pgid=" << pgid 
@@ -9075,24 +9088,27 @@ void OSD::handle_pg_query(OpRequestRef op)
       << " type=" << it->second.type
       << dendl;
 
-    if (pgid.preferred() >= 0) {
+    if (pgid.preferred() >= 0)
+    {
       dout(10) << "ignoring localized pg " << pgid << dendl;
       continue;
     }
 
-    if (service.splitting(pgid)) {
+    if (service.splitting(pgid))
+    {
       peering_wait_for_split[pgid].push_back(
-	PG::CephPeeringEvtRef(
-	  new PG::CephPeeringEvt(
-	    it->second.epoch_sent, it->second.epoch_sent,
-	    PG::MQuery(pg_shard_t(from, it->second.from),
-		       it->second, it->second.epoch_sent))));
+          PG::CephPeeringEvtRef(
+            new PG::CephPeeringEvt(
+              it->second.epoch_sent, it->second.epoch_sent,
+              PG::MQuery(pg_shard_t(from, it->second.from),
+                it->second, it->second.epoch_sent))));
       continue;
     }
 
     {
       RWLock::RLocker l(pg_map_lock);
-      if (pg_map.count(pgid)) {
+      if (pg_map.count(pgid))
+      {
         dout(10) << "Yuanguo: " << __func__ <<  " pg_map contains " << pgid << dendl;
         PG *pg = 0;
         pg = _lookup_lock_pg_with_map_lock_held(pgid);
@@ -9113,54 +9129,58 @@ void OSD::handle_pg_query(OpRequestRef op)
     // get active crush mapping
     int up_primary, acting_primary;
     vector<int> up, acting;
-    osdmap->pg_to_up_acting_osds(
-      pgid.pgid, &up, &up_primary, &acting, &acting_primary);
+    osdmap->pg_to_up_acting_osds(pgid.pgid, &up, &up_primary, &acting, &acting_primary);
 
     // same primary?
     pg_history_t history = it->second.history;
-    bool valid_history = project_pg_history(
-      pgid, history, it->second.epoch_sent,
-      up, up_primary, acting, acting_primary);
+    bool valid_history = project_pg_history(pgid, history, it->second.epoch_sent, up, up_primary, acting, acting_primary);
 
     if (!valid_history ||
-        it->second.epoch_sent < history.same_interval_since) {
+        it->second.epoch_sent < history.same_interval_since)
+    {
       dout(10) << " pg " << pgid << " dne, and pg has changed in "
-	       << history.same_interval_since
-	       << " (msg from " << it->second.epoch_sent << ")" << dendl;
+        << history.same_interval_since
+        << " (msg from " << it->second.epoch_sent << ")" << dendl;
       continue;
     }
 
     dout(10) << " pg " << pgid << " dne" << dendl;
     pg_info_t empty(spg_t(pgid.pgid, it->second.to));
+
     /* This is racy, but that should be ok: if we complete the deletion
      * before the pg is recreated, we'll just start it off backfilling
      * instead of just empty */
     if (service.deleting_pgs.lookup(pgid))
       empty.set_last_backfill(hobject_t());
+
     if (it->second.type == pg_query_t::LOG ||
-	it->second.type == pg_query_t::FULLLOG) {
+        it->second.type == pg_query_t::FULLLOG)
+    {
       ConnectionRef con = service.get_con_osd_cluster(from, osdmap->get_epoch());
-      if (con) {
-      dout(10) << "Yuanguo: " << __func__ << " pgid= " << pgid << " send pg log to " << it->second.from << dendl;
-	MOSDPGLog *mlog = new MOSDPGLog(
-	  it->second.from, it->second.to,
-	  osdmap->get_epoch(), empty,
-	  it->second.epoch_sent);
-	service.share_map_peer(from, con.get(), osdmap);
-	con->send_message(mlog);
+      if (con)
+      {
+        dout(10) << "Yuanguo: " << __func__ << " pgid= " << pgid << " send pg log to " << it->second.from << dendl;
+        MOSDPGLog *mlog = new MOSDPGLog(
+            it->second.from, it->second.to,
+            osdmap->get_epoch(), empty,
+            it->second.epoch_sent);
+        service.share_map_peer(from, con.get(), osdmap);
+        con->send_message(mlog);
       }
-    } else {
+    }
+    else
+    {
       dout(10) << "Yuanguo: " << __func__ << " pgid= " << pgid << " put into notify list, to " << it->second.from << dendl;
       notify_list[from].push_back(
-	make_pair(
-	  pg_notify_t(
-	    it->second.from, it->second.to,
-	    it->second.epoch_sent,
-	    osdmap->get_epoch(),
-	    empty),
-	  PastIntervals(
-	    osdmap->get_pools().at(pgid.pool()).ec_pool(),
-	    *osdmap)));
+          make_pair(
+            pg_notify_t(
+              it->second.from, it->second.to,
+              it->second.epoch_sent,
+              osdmap->get_epoch(),
+              empty),
+            PastIntervals(
+              osdmap->get_pools().at(pgid.pool()).ec_pool(),
+              *osdmap)));
     }
   }
   do_notifies(notify_list, osdmap);

@@ -319,8 +319,7 @@ void PGLog::merge_log(pg_info_t &oinfo, pg_log_t &olog, pg_shard_t fromosd,
                       pg_info_t &info, LogEntryHandler *rollbacker,
                       bool &dirty_info, bool &dirty_big_info)
 {
-  dout(10) << "merge_log " << olog << " from osd." << fromosd
-           << " into " << log << dendl;
+  dout(10) << "merge_log " << olog << " from osd." << fromosd << " into " << log << dendl;
 
   // Check preconditions
 
@@ -329,9 +328,8 @@ void PGLog::merge_log(pg_info_t &oinfo, pg_log_t &olog, pg_shard_t fromosd,
   // The logs must overlap.
   assert(log.head >= olog.tail && olog.head >= log.tail);
 
-  for (map<hobject_t, pg_missing_item>::const_iterator i = missing.get_items().begin();
-       i != missing.get_items().end();
-       ++i) {
+  for (map<hobject_t, pg_missing_item>::const_iterator i = missing.get_items().begin(); i != missing.get_items().end(); ++i)
+  {
     dout(20) << "pg_missing_t sobject: " << i->first << dendl;
   }
 
@@ -342,16 +340,17 @@ void PGLog::merge_log(pg_info_t &oinfo, pg_log_t &olog, pg_shard_t fromosd,
   //  missing set, as that should already be consistent with our
   //  current log.
   eversion_t orig_tail = log.tail;
-  if (olog.tail < log.tail) {
+  if (olog.tail < log.tail)
+  {
     dout(10) << "merge_log extending tail to " << olog.tail << dendl;
     list<pg_log_entry_t>::iterator from = olog.log.begin();
     list<pg_log_entry_t>::iterator to;
     eversion_t last;
-    for (to = from;
-	 to != olog.log.end();
-	 ++to) {
+    for (to = from; to != olog.log.end(); ++to)
+    {
       if (to->version > log.tail)
-	break;
+        break;
+
       log.index(*to);
       dout(15) << *to << dendl;
       last = to->version;
@@ -359,60 +358,70 @@ void PGLog::merge_log(pg_info_t &oinfo, pg_log_t &olog, pg_shard_t fromosd,
     mark_dirty_to(last);
 
     // splice into our log.
-    log.log.splice(log.log.begin(),
-		   olog.log, from, to);
+    log.log.splice(log.log.begin(), olog.log, from, to);
 
     info.log_tail = log.tail = olog.tail;
     changed = true;
   }
 
   if (oinfo.stats.reported_seq < info.stats.reported_seq ||   // make sure reported always increases
-      oinfo.stats.reported_epoch < info.stats.reported_epoch) {
+      oinfo.stats.reported_epoch < info.stats.reported_epoch)
+  {
     oinfo.stats.reported_seq = info.stats.reported_seq;
     oinfo.stats.reported_epoch = info.stats.reported_epoch;
   }
+
   if (info.last_backfill.is_max())
     info.stats = oinfo.stats;
+
   info.hit_set = oinfo.hit_set;
 
   // do we have divergent entries to throw out?
-  if (olog.head < log.head) {
+  if (olog.head < log.head)
+  {
     rewind_divergent_log(olog.head, info, rollbacker, dirty_info, dirty_big_info);
     changed = true;
   }
 
   // extend on head?
-  if (olog.head > log.head) {
+  if (olog.head > log.head)
+  {
     dout(10) << "merge_log extending head to " << olog.head << dendl;
 
     // find start point in olog
     list<pg_log_entry_t>::iterator to = olog.log.end();
     list<pg_log_entry_t>::iterator from = olog.log.end();
     eversion_t lower_bound = MAX(olog.tail, orig_tail);
-    while (1) {
+    while (1)
+    {
       if (from == olog.log.begin())
-	break;
+        break;
+
       --from;
       dout(20) << "  ? " << *from << dendl;
-      if (from->version <= log.head) {
-	lower_bound = MAX(lower_bound, from->version);
-	++from;
-	break;
+
+      if (from->version <= log.head)
+      {
+        lower_bound = MAX(lower_bound, from->version);
+        ++from;
+        break;
       }
     }
-    dout(20) << "merge_log cut point (usually last shared) is "
-	     << lower_bound << dendl;
+
+    dout(20) << "merge_log cut point (usually last shared) is " << lower_bound << dendl;
     mark_dirty_from(lower_bound);
 
     auto divergent = log.rewind_from_head(lower_bound);
     // move aside divergent items
-    for (auto &&oe: divergent) {
+    for (auto &&oe: divergent)
+    {
       dout(10) << "merge_log divergent " << oe << dendl;
     }
     log.roll_forward_to(log.head, rollbacker);
 
     mempool::osd_pglog::list<pg_log_entry_t> new_entries;
     new_entries.splice(new_entries.end(), olog.log, from, to);
+
     append_log_entries_update_missing(
       info.last_backfill,
       info.last_backfill_bitwise,
@@ -444,15 +453,16 @@ void PGLog::merge_log(pg_info_t &oinfo, pg_log_t &olog, pg_shard_t fromosd,
   }
 
   // now handle dups
-  if (merge_log_dups(olog)) {
+  if (merge_log_dups(olog))
+  {
     dirty_dups = true;
     changed = true;
   }
 
-  dout(10) << "merge_log result " << log << " " << missing <<
-    " changed=" << changed << dendl;
+  dout(10) << "merge_log result " << log << " " << missing << " changed=" << changed << dendl;
 
-  if (changed) {
+  if (changed)
+  {
     dirty_info = true;
     dirty_big_info = true;
   }
