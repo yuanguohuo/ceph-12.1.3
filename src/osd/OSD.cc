@@ -8740,33 +8740,34 @@ void OSD::do_infos(map<int,
 		       vector<pair<pg_notify_t, PastIntervals> > >& info_map,
 		   OSDMapRef curmap)
 {
-  for (map<int,
-	   vector<pair<pg_notify_t, PastIntervals> > >::iterator p =
-	 info_map.begin();
-       p != info_map.end();
-       ++p) {
-    if (!curmap->is_up(p->first)) {
+  for (map<int, vector<pair<pg_notify_t, PastIntervals> > >::iterator p = info_map.begin(); p != info_map.end(); ++p)
+  {
+    if (!curmap->is_up(p->first))
+    {
       dout(20) << __func__ << " skipping down osd." << p->first << dendl;
       continue;
     }
-    for (vector<pair<pg_notify_t,PastIntervals> >::iterator i = p->second.begin();
-	 i != p->second.end();
-	 ++i) {
-      dout(20) << __func__ << " sending info " << i->first.info
-	       << " to shard " << p->first << dendl;
+
+    for (vector<pair<pg_notify_t,PastIntervals> >::iterator i = p->second.begin(); i != p->second.end(); ++i)
+    {
+      dout(20) << __func__ << " sending info " << i->first.info << " to shard " << p->first << dendl;
     }
-    ConnectionRef con = service.get_con_osd_cluster(
-      p->first, curmap->get_epoch());
-    if (!con) {
-      dout(20) << __func__ << " skipping osd." << p->first
-	       << " (NULL con)" << dendl;
+
+    ConnectionRef con = service.get_con_osd_cluster(p->first, curmap->get_epoch());
+    if (!con)
+    {
+      dout(20) << __func__ << " skipping osd." << p->first << " (NULL con)" << dendl;
       continue;
     }
+
     service.share_map_peer(p->first, con.get(), curmap);
+
     MOSDPGInfo *m = new MOSDPGInfo(curmap->get_epoch());
     m->pg_list = p->second;
+
     con->send_message(m);
   }
+
   info_map.clear();
 }
 

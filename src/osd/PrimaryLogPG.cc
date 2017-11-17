@@ -10979,47 +10979,55 @@ void PrimaryLogPG::on_shutdown()
 void PrimaryLogPG::on_activate()
 {
   // all clean?
-  if (needs_recovery()) {
+  if (needs_recovery())
+  {
     dout(10) << "activate not all replicas are up-to-date, queueing recovery" << dendl;
+
     queue_peering_event(
-      CephPeeringEvtRef(
-	std::make_shared<CephPeeringEvt>(
-	  get_osdmap()->get_epoch(),
-	  get_osdmap()->get_epoch(),
-	  DoRecovery())));
-  } else if (needs_backfill()) {
+        CephPeeringEvtRef(
+          std::make_shared<CephPeeringEvt>(
+            get_osdmap()->get_epoch(),
+            get_osdmap()->get_epoch(),
+            DoRecovery())));
+  }
+  else if (needs_backfill())
+  {
     dout(10) << "activate queueing backfill" << dendl;
+
     queue_peering_event(
-      CephPeeringEvtRef(
-	std::make_shared<CephPeeringEvt>(
-	  get_osdmap()->get_epoch(),
-	  get_osdmap()->get_epoch(),
-	  RequestBackfill())));
-  } else {
+        CephPeeringEvtRef(
+          std::make_shared<CephPeeringEvt>(
+            get_osdmap()->get_epoch(),
+            get_osdmap()->get_epoch(),
+            RequestBackfill())));
+  }
+  else
+  {
     dout(10) << "activate all replicas clean, no recovery" << dendl;
+
     eio_errors_to_process = false;
     queue_peering_event(
-      CephPeeringEvtRef(
-	std::make_shared<CephPeeringEvt>(
-	  get_osdmap()->get_epoch(),
-	  get_osdmap()->get_epoch(),
-	  AllReplicasRecovered())));
+        CephPeeringEvtRef(
+          std::make_shared<CephPeeringEvt>(
+            get_osdmap()->get_epoch(),
+            get_osdmap()->get_epoch(),
+            AllReplicasRecovered())));
   }
 
   publish_stats_to_osd();
 
-  if (!backfill_targets.empty()) {
+  if (!backfill_targets.empty())
+  {
     last_backfill_started = earliest_backfill();
     new_backfill = true;
+
     assert(!last_backfill_started.is_max());
-    dout(5) << "on activate: bft=" << backfill_targets
-	   << " from " << last_backfill_started << dendl;
-    for (set<pg_shard_t>::iterator i = backfill_targets.begin();
-	 i != backfill_targets.end();
-	 ++i) {
-      dout(5) << "target shard " << *i
-	     << " from " << peer_info[*i].last_backfill
-	     << dendl;
+
+    dout(5) << "on activate: bft=" << backfill_targets << " from " << last_backfill_started << dendl;
+
+    for (set<pg_shard_t>::iterator i = backfill_targets.begin(); i != backfill_targets.end(); ++i)
+    {
+      dout(5) << "target shard " << *i << " from " << peer_info[*i].last_backfill << dendl;
     }
   }
 
@@ -12432,27 +12440,31 @@ void PrimaryLogPG::check_local()
 
   // just scan the log.
   set<hobject_t> did;
-  for (list<pg_log_entry_t>::const_reverse_iterator p = pg_log.get_log().log.rbegin();
-       p != pg_log.get_log().log.rend();
-       ++p) {
+  for (list<pg_log_entry_t>::const_reverse_iterator p = pg_log.get_log().log.rbegin(); p != pg_log.get_log().log.rend(); ++p)
+  {
     if (did.count(p->soid))
       continue;
+
     did.insert(p->soid);
 
-    if (p->is_delete() && !is_missing_object(p->soid)) {
-      dout(10) << " checking " << p->soid
-	       << " at " << p->version << dendl;
+    if (p->is_delete() && !is_missing_object(p->soid))
+    {
+      dout(10) << " checking " << p->soid << " at " << p->version << dendl;
+
       struct stat st;
       int r = osd->store->stat(
-	ch,
-	ghobject_t(p->soid, ghobject_t::NO_GEN, pg_whoami.shard),
-	&st);
-      if (r != -ENOENT) {
-	derr << __func__ << " " << p->soid << " exists, but should have been "
-	     << "deleted" << dendl;
-	assert(0 == "erroneously present object");
+          ch,
+          ghobject_t(p->soid, ghobject_t::NO_GEN, pg_whoami.shard),
+          &st);
+
+      if (r != -ENOENT)
+      {
+        derr << __func__ << " " << p->soid << " exists, but should have been " << "deleted" << dendl;
+        assert(0 == "erroneously present object");
       }
-    } else {
+    }
+    else
+    {
       // ignore old(+missing) objects
     }
   }
