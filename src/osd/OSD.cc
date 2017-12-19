@@ -9561,6 +9561,8 @@ void OSD::enqueue_op(spg_t pg, OpRequestRef& op, epoch_t epoch)
 /*
  * NOTE: dequeue called in worker thread, with pg lock
  */
+//Yuanguo: the op has just been dequequed from one shard of ShardedOpWQ::shard_list, see func ShardedOpWQ::_process
+//     who called us;
 void OSD::dequeue_op(
   PGRef pg, OpRequestRef op,
   ThreadPool::TPHandle &handle)
@@ -9572,16 +9574,16 @@ void OSD::dequeue_op(
   op->set_dequeued_time(now);
   utime_t latency = now - op->get_req()->get_recv_stamp();
   dout(10) << "dequeue_op " << op << " prio " << op->get_req()->get_priority()
-	   << " cost " << op->get_req()->get_cost()
-	   << " latency " << latency
-	   << " " << *(op->get_req())
-	   << " pg " << *pg << dendl;
+           << " cost " << op->get_req()->get_cost()
+           << " latency " << latency
+           << " " << *(op->get_req())
+           << " pg " << *pg << dendl;
 
   logger->tinc(l_osd_op_before_dequeue_op_lat, latency);
 
-  Session *session = static_cast<Session *>(
-    op->get_req()->get_connection()->get_priv());
-  if (session) {
+  Session *session = static_cast<Session *>(op->get_req()->get_connection()->get_priv());
+  if (session)
+  {
     maybe_share_map(session, op, pg->get_osdmap());
     session->put();
   }
@@ -10201,107 +10203,161 @@ void OSD::ShardedOpWQ::_process(uint32_t thread_index, heartbeat_handle_d *hb)
 
   // peek at spg_t
   sdata->sdata_op_ordering_lock.Lock();
-  if (sdata->pqueue->empty()) {
+
+  if (sdata->pqueue->empty())
+  {
     dout(20) << __func__ << " empty q, waiting" << dendl;
     // optimistically sleep a moment; maybe another work item will come along.
-    osd->cct->get_heartbeat_map()->reset_timeout(hb,
-      osd->cct->_conf->threadpool_default_timeout, 0);
-    sdata->sdata_lock.Lock();
+    osd->cct->get_heartbeat_map()->reset_timeout(hb, osd->cct->_conf->threadpool_default_timeout, 0);
+    sdata->sdata_lock.Lock();  //Yuanguo: since pqueue is empty, will sleep, this lock is used with sdata_cond for wait/notify;
+
     sdata->sdata_op_ordering_lock.Unlock();
-    sdata->sdata_cond.WaitInterval(sdata->sdata_lock,
-      utime_t(osd->cct->_conf->threadpool_empty_queue_max_wait, 0));
+
+    sdata->sdata_cond.WaitInterval(sdata->sdata_lock, utime_t(osd->cct->_conf->threadpool_empty_queue_max_wait, 0));
+
     sdata->sdata_lock.Unlock();
+
     sdata->sdata_op_ordering_lock.Lock();
-    if (sdata->pqueue->empty()) {
+
+    if (sdata->pqueue->empty())
+    {
       sdata->sdata_op_ordering_lock.Unlock();
       return;
     }
   }
+
+  //Yuanguo: 
+  //    step-1. dequeue an item from sdata->pqueue;
+  //    step-2. push it into sdata->pg_slots;
+  //    step-3. unlock sdata->sdata_op_ordering_lock;
+  //    step-4. acquire pg lock;
+  //    step-5. lock sdata->sdata_op_ordering_lock;
+  //    step-6. pop an item from sdata->pg_slots and process it;
+  //    step-7. releas pg lock acquired in step-4;
+  //
+  //Also, notice that:
+  // a. in step-6, sdata->pg_slots might be empty, because raced with wake_pg_waiters or prune_pg_waiters;
+  // b. the item popped and processed in step-6 might NOT be the same one as that dequeued and pushed in step-1 and 
+  //    step-2. Because, in step-4, the item might be swapped, see OSD::ShardedOpWQ::_enqueue_front()
+
+  //Yuanguo: step-1. dequeue an item from stata->pqueue;
   pair<spg_t, PGQueueable> item = sdata->pqueue->dequeue();
-  if (osd->is_stopping()) {
+
+  if (osd->is_stopping())
+  {
     sdata->sdata_op_ordering_lock.Unlock();
     return;    // OSD shutdown, discard.
   }
+
+  //Yuanguo: step-2. push it into sdata->pg_slots;
   PGRef pg;
   uint64_t requeue_seq;
   {
     auto& slot = sdata->pg_slots[item.first];
+
     dout(30) << __func__ << " " << item.first
-	     << " to_process " << slot.to_process
-	     << " waiting_for_pg=" << (int)slot.waiting_for_pg << dendl;
+       << " to_process " << slot.to_process
+       << " waiting_for_pg=" << (int)slot.waiting_for_pg << dendl;
+
     slot.to_process.push_back(item.second);
     // note the requeue seq now...
     requeue_seq = slot.requeue_seq;
-    if (slot.waiting_for_pg) {
+
+    if (slot.waiting_for_pg)
+    {
       // save ourselves a bit of effort
       dout(20) << __func__ << " " << item.first << " item " << item.second
-	       << " queued, waiting_for_pg" << dendl;
+               << " queued, waiting_for_pg" << dendl;
       sdata->sdata_op_ordering_lock.Unlock();
       return;
     }
+
     pg = slot.pg;
-    dout(20) << __func__ << " " << item.first << " item " << item.second
-	     << " queued" << dendl;
+    dout(20) << __func__ << " " << item.first << " item " << item.second << " queued" << dendl;
+
     ++slot.num_running;
   }
+
+  //Yuanguo: step-3. unlock sdata->sdata_op_ordering_lock;
   sdata->sdata_op_ordering_lock.Unlock();
 
   osd->service.maybe_inject_dispatch_delay();
 
+  //Yuanguo: step-4. acquire pg lock;
   // [lookup +] lock pg (if we have it)
-  if (!pg) {
+  if (!pg)
+  {
     pg = osd->_lookup_lock_pg(item.first);
-  } else {
+  }
+  else
+  {
     pg->lock();
   }
 
   osd->service.maybe_inject_dispatch_delay();
 
   boost::optional<PGQueueable> qi;
-
+ 
+  //Yuanguo: step-5. lock sdata->sdata_op_ordering_lock;
   // we don't use a Mutex::Locker here because of the
   // osd->service.release_reserved_pushes() call below
   sdata->sdata_op_ordering_lock.Lock();
 
+
+  //Yuanguo: step-6. pop an item from sdata->pg_slots and process it;
   auto q = sdata->pg_slots.find(item.first);
   assert(q != sdata->pg_slots.end());
+
   auto& slot = q->second;
   --slot.num_running;
 
-  if (slot.to_process.empty()) {
+  if (slot.to_process.empty())
+  {
     // raced with wake_pg_waiters or prune_pg_waiters
     dout(20) << __func__ << " " << item.first << " nothing queued" << dendl;
-    if (pg) {
+    if (pg)
+    {
       pg->unlock();
     }
     sdata->sdata_op_ordering_lock.Unlock();
     return;
   }
-  if (requeue_seq != slot.requeue_seq) {
+
+  if (requeue_seq != slot.requeue_seq)
+  {
     dout(20) << __func__ << " " << item.first
-	     << " requeue_seq " << slot.requeue_seq << " > our "
-	     << requeue_seq << ", we raced with wake_pg_waiters"
-	     << dendl;
-    if (pg) {
+             << " requeue_seq " << slot.requeue_seq << " > our "
+             << requeue_seq << ", we raced with wake_pg_waiters"
+             << dendl;
+
+    if(pg)
+    {
       pg->unlock();
     }
+
     sdata->sdata_op_ordering_lock.Unlock();
     return;
   }
-  if (pg && !slot.pg && !pg->deleting) {
+
+  if (pg && !slot.pg && !pg->deleting)
+  {
     dout(20) << __func__ << " " << item.first << " set pg to " << pg << dendl;
     slot.pg = pg;
   }
+
   dout(30) << __func__ << " " << item.first << " to_process " << slot.to_process
 	   << " waiting_for_pg=" << (int)slot.waiting_for_pg << dendl;
 
   // make sure we're not already waiting for this pg
-  if (slot.waiting_for_pg) {
+  if (slot.waiting_for_pg)
+  {
     dout(20) << __func__ << " " << item.first << " item " << item.second
-	     << " slot is waiting_for_pg" << dendl;
-    if (pg) {
+	           << " slot is waiting_for_pg" << dendl;
+    if(pg)
+    {
       pg->unlock();
     }
+
     sdata->sdata_op_ordering_lock.Unlock();
     return;
   }
@@ -10310,46 +10366,61 @@ void OSD::ShardedOpWQ::_process(uint32_t thread_index, heartbeat_handle_d *hb)
   qi = slot.to_process.front();
   slot.to_process.pop_front();
   dout(20) << __func__ << " " << item.first << " item " << *qi
-	   << " pg " << pg << dendl;
+	         << " pg " << pg << dendl;
 
-  if (!pg) {
+  if (!pg)
+  {
     // should this pg shard exist on this osd in this (or a later) epoch?
     OSDMapRef osdmap = sdata->waiting_for_pg_osdmap;
-    if (osdmap->is_up_acting_osd_shard(item.first, osd->whoami)) {
+    if (osdmap->is_up_acting_osd_shard(item.first, osd->whoami))
+    {
       dout(20) << __func__ << " " << item.first
 	       << " no pg, should exist, will wait" << " on " << *qi << dendl;
       slot.to_process.push_front(*qi);
       slot.waiting_for_pg = true;
-    } else if (qi->get_map_epoch() > osdmap->get_epoch()) {
+    }
+    else if (qi->get_map_epoch() > osdmap->get_epoch())
+    {
       dout(20) << __func__ << " " << item.first << " no pg, item epoch is "
 	       << qi->get_map_epoch() << " > " << osdmap->get_epoch()
 	       << ", will wait on " << *qi << dendl;
+
       slot.to_process.push_front(*qi);
       slot.waiting_for_pg = true;
-    } else {
+    }
+    else
+    {
       dout(20) << __func__ << " " << item.first << " no pg, shouldn't exist,"
 	       << " dropping " << *qi << dendl;
       // share map with client?
-      if (boost::optional<OpRequestRef> _op = qi->maybe_get_op()) {
-	Session *session = static_cast<Session *>(
-	  (*_op)->get_req()->get_connection()->get_priv());
-	if (session) {
-	  osd->maybe_share_map(session, *_op, sdata->waiting_for_pg_osdmap);
-	  session->put();
-	}
+      if (boost::optional<OpRequestRef> _op = qi->maybe_get_op())
+      {
+        Session *session = static_cast<Session *>(
+            (*_op)->get_req()->get_connection()->get_priv());
+
+        if (session)
+        {
+          //Yuanguo: share map with the client, who sent the request to me ('this' OSD). I don't 
+          //    have the pg, maybe the client doesn't have the correct osdmap;
+          osd->maybe_share_map(session, *_op, sdata->waiting_for_pg_osdmap);
+          session->put();
+        }
       }
+
       unsigned pushes_to_free = qi->get_reserved_pushes();
-      if (pushes_to_free > 0) {
-	sdata->sdata_op_ordering_lock.Unlock();
-	osd->service.release_reserved_pushes(pushes_to_free);
-	return;
+      if (pushes_to_free > 0)
+      {
+        sdata->sdata_op_ordering_lock.Unlock();
+        osd->service.release_reserved_pushes(pushes_to_free);
+        return;
       }
     }
+
     sdata->sdata_op_ordering_lock.Unlock();
     return;
   }
-  sdata->sdata_op_ordering_lock.Unlock();
 
+  sdata->sdata_op_ordering_lock.Unlock();
 
   // osd_opwq_process marks the point at which an operation has been dequeued
   // and will begin to be handled by a worker thread.
@@ -10373,8 +10444,7 @@ void OSD::ShardedOpWQ::_process(uint32_t thread_index, heartbeat_handle_d *hb)
   delete f;
   *_dout << dendl;
 
-  ThreadPool::TPHandle tp_handle(osd->cct, hb, timeout_interval,
-				 suicide_interval);
+  ThreadPool::TPHandle tp_handle(osd->cct, hb, timeout_interval, suicide_interval);
   qi->run(osd, pg, tp_handle);
 
   {
@@ -10388,23 +10458,26 @@ void OSD::ShardedOpWQ::_process(uint32_t thread_index, heartbeat_handle_d *hb)
         reqid.name._num, reqid.tid, reqid.inc);
   }
 
+  //Yuanguo: step-7. releas pg lock acquired in step-4;
   pg->unlock();
 }
 
-void OSD::ShardedOpWQ::_enqueue(pair<spg_t, PGQueueable> item) {
+void OSD::ShardedOpWQ::_enqueue(pair<spg_t, PGQueueable> item)
+{
   uint32_t shard_index =
     item.first.hash_to_shard(shard_list.size());
 
   ShardData* sdata = shard_list[shard_index];
   assert (NULL != sdata);
+
   unsigned priority = item.second.get_priority();
   unsigned cost = item.second.get_cost();
+
   sdata->sdata_op_ordering_lock.Lock();
 
-  //Yuanguo: in strict queue, items are ordered strictly based on their 
-  //         priority; 
-  //         in normal queue, items will be selected randomly, but one with 
-  //         lower cost has better chance than that with higher cost;
+  //Yuanguo: in strict queue, items are ordered strictly based on their priority; 
+  //         in normal queue, items will be selected randomly, but one with lower 
+  //              cost has better chance than that with higher cost;
   dout(20) << __func__ << " " << item.first << " " << item.second << dendl;
   if (priority >= osd->op_prio_cutoff)
     sdata->pqueue->enqueue_strict(
@@ -10413,12 +10486,12 @@ void OSD::ShardedOpWQ::_enqueue(pair<spg_t, PGQueueable> item) {
     sdata->pqueue->enqueue(
       item.second.get_owner(),
       priority, cost, item);
+
   sdata->sdata_op_ordering_lock.Unlock();
 
   sdata->sdata_lock.Lock();
   sdata->sdata_cond.SignalOne(); //Yuanguo: notify a thread working on this shard;
   sdata->sdata_lock.Unlock();
-
 }
 
 void OSD::ShardedOpWQ::_enqueue_front(pair<spg_t, PGQueueable> item)
@@ -10426,9 +10499,16 @@ void OSD::ShardedOpWQ::_enqueue_front(pair<spg_t, PGQueueable> item)
   uint32_t shard_index = item.first.hash_to_shard(shard_list.size());
   ShardData* sdata = shard_list[shard_index];
   assert (NULL != sdata);
+
   sdata->sdata_op_ordering_lock.Lock();
+
   auto p = sdata->pg_slots.find(item.first);
-  if (p != sdata->pg_slots.end() && !p->second.to_process.empty()) {
+  if (p != sdata->pg_slots.end() && !p->second.to_process.empty())
+  {
+    //Yuanguo: if found and p->second.to_process is not empty, push the new item at the front
+    //         and pop out an old item; the old item will be put back to sdata->pqueue, see
+    //         sdata->_enqueue_front below;
+
     // we may be racing with _process, which has dequeued a new item
     // from pqueue, put it on to_process, and is now busy taking the
     // pg lock.  ensure this old requeued item is ordered before any
@@ -10436,14 +10516,22 @@ void OSD::ShardedOpWQ::_enqueue_front(pair<spg_t, PGQueueable> item)
     p->second.to_process.push_front(item.second);
     item.second = p->second.to_process.back();
     p->second.to_process.pop_back();
+
     dout(20) << __func__ << " " << item.first
-	     << " " << p->second.to_process.front()
-	     << " shuffled w/ " << item.second << dendl;
-  } else {
+       << " " << p->second.to_process.front()
+       << " shuffled w/ " << item.second << dendl;
+  }
+  else
+  {
     dout(20) << __func__ << " " << item.first << " " << item.second << dendl;
   }
+
+  //Yuanguo: put item into sdata->pqueue; it might be the new item (the argument), or an old item that was
+  //         popped out from pg_slots; see it above.
   sdata->_enqueue_front(item, osd->op_prio_cutoff);
+
   sdata->sdata_op_ordering_lock.Unlock();
+
   sdata->sdata_lock.Lock();
   sdata->sdata_cond.SignalOne(); //Yuanguo: notify a thread working on this shard;
   sdata->sdata_lock.Unlock();

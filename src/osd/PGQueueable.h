@@ -54,21 +54,23 @@ struct PGRecovery {
 };
 
 
-class PGQueueable {
+class PGQueueable
+{
   typedef boost::variant<
-    OpRequestRef,
-    PGSnapTrim,
-    PGScrub,
-    PGRecovery
-    > QVariant;
+                  OpRequestRef,
+                  PGSnapTrim,
+                  PGScrub,
+                  PGRecovery > QVariant;
   QVariant qvariant;
+
   int cost;
   unsigned priority;
   utime_t start_time;
   entity_inst_t owner;
   epoch_t map_epoch;    ///< an epoch we expect the PG to exist in
 
-  struct RunVis : public boost::static_visitor<> {
+  struct RunVis : public boost::static_visitor<>
+  {
     OSD *osd;
     PGRef &pg;
     ThreadPool::TPHandle &handle;
@@ -80,7 +82,8 @@ class PGQueueable {
     void operator()(const PGRecovery &op);
   }; // struct RunVis
 
-  struct StringifyVis : public boost::static_visitor<std::string> {
+  struct StringifyVis : public boost::static_visitor<std::string>
+  {
     std::string operator()(const OpRequestRef &op) {
       return stringify(op);
     }
@@ -95,7 +98,8 @@ class PGQueueable {
     }
   };
 
-  friend ostream& operator<<(ostream& out, const PGQueueable& q) {
+  friend ostream& operator<<(ostream& out, const PGQueueable& q)
+  {
     StringifyVis v;
     return out << "PGQueueable(" << boost::apply_visitor(v, q.qvariant)
 	       << " prio " << q.priority << " cost " << q.cost

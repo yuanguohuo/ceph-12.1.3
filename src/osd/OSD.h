@@ -1626,7 +1626,8 @@ private:
   class ShardedOpWQ
     : public ShardedThreadPool::ShardedWQ<pair<spg_t,PGQueueable>>
   {
-    struct ShardData {
+    struct ShardData
+    {
       //Yuanguo: sdata_lock and sdata_cond are used for those threads working
       //     on this shard to wait; and for other thread to notify them; 
       //  any other usage?
@@ -1636,18 +1637,21 @@ private:
       Mutex sdata_op_ordering_lock;   ///< protects all members below
 
       OSDMapRef waiting_for_pg_osdmap;
-      struct pg_slot {
-	PGRef pg;                     ///< cached pg reference [optional]
-	list<PGQueueable> to_process; ///< order items for this slot
-	int num_running = 0;          ///< _process threads doing pg lookup/lock
 
-	/// true if pg does/did not exist. if so all new items go directly to
-	/// to_process.  cleared by prune_pg_waiters.
-	bool waiting_for_pg = false;
+      //Yuanguo: requests for a specific pg;
+      struct pg_slot
+      {
+          PGRef pg;                     ///< cached pg reference [optional]
+          list<PGQueueable> to_process; ///< order items for this slot
+          int num_running = 0;          ///< _process threads doing pg lookup/lock
 
-	/// incremented by wake_pg_waiters; indicates racing _process threads
-	/// should bail out (their op has been requeued)
-	uint64_t requeue_seq = 0;
+          /// true if pg does/did not exist. if so all new items go directly to
+          /// to_process.  cleared by prune_pg_waiters.
+          bool waiting_for_pg = false;
+
+          /// incremented by wake_pg_waiters; indicates racing _process threads
+          /// should bail out (their op has been requeued)
+          uint64_t requeue_seq = 0;
       };
 
       /// map of slots for each spg_t.  maintains ordering of items dequeued
@@ -1658,43 +1662,44 @@ private:
       /// priority queue
       std::unique_ptr<OpQueue< pair<spg_t, PGQueueable>, entity_inst_t>> pqueue;
 
-      void _enqueue_front(pair<spg_t, PGQueueable> item, unsigned cutoff) {
-	unsigned priority = item.second.get_priority();
-	unsigned cost = item.second.get_cost();
-	if (priority >= cutoff)
-	  pqueue->enqueue_strict_front(
-	    item.second.get_owner(),
-	    priority, item);
-	else
-	  pqueue->enqueue_front(
-	    item.second.get_owner(),
-	    priority, cost, item);
+      void _enqueue_front(pair<spg_t, PGQueueable> item, unsigned cutoff)
+      {
+          unsigned priority = item.second.get_priority();
+          unsigned cost = item.second.get_cost();
+          if (priority >= cutoff)
+            pqueue->enqueue_strict_front(
+                item.second.get_owner(),
+                priority, item);
+          else
+            pqueue->enqueue_front(
+                item.second.get_owner(),
+                priority, cost, item);
       }
 
       ShardData(
-	string lock_name, string ordering_lock,
-	uint64_t max_tok_per_prio, uint64_t min_cost, CephContext *cct,
-	io_queue opqueue)
-	: sdata_lock(lock_name.c_str(), false, true, false, cct),
-	  sdata_op_ordering_lock(ordering_lock.c_str(), false, true,
-				 false, cct) {
-	if (opqueue == io_queue::weightedpriority) {
-	  pqueue = std::unique_ptr
-	    <WeightedPriorityQueue<pair<spg_t,PGQueueable>,entity_inst_t>>(
-	      new WeightedPriorityQueue<pair<spg_t,PGQueueable>,entity_inst_t>(
-		max_tok_per_prio, min_cost));
-	} else if (opqueue == io_queue::prioritized) {
-	  pqueue = std::unique_ptr
-	    <PrioritizedQueue<pair<spg_t,PGQueueable>,entity_inst_t>>(
-	      new PrioritizedQueue<pair<spg_t,PGQueueable>,entity_inst_t>(
-		max_tok_per_prio, min_cost));
-	} else if (opqueue == io_queue::mclock_opclass) {
-	  pqueue = std::unique_ptr
-	    <ceph::mClockOpClassQueue>(new ceph::mClockOpClassQueue(cct));
-	} else if (opqueue == io_queue::mclock_client) {
-	  pqueue = std::unique_ptr
-	    <ceph::mClockClientQueue>(new ceph::mClockClientQueue(cct));
-	}
+          string lock_name, string ordering_lock,
+          uint64_t max_tok_per_prio, uint64_t min_cost, CephContext *cct,
+          io_queue opqueue) : sdata_lock(lock_name.c_str(), false, true, false, cct), 
+                              sdata_op_ordering_lock(ordering_lock.c_str(), false, true, false, cct)
+      {
+        if (opqueue == io_queue::weightedpriority)
+        {
+          pqueue = std::unique_ptr<WeightedPriorityQueue<pair<spg_t,PGQueueable>,entity_inst_t>>(
+              new WeightedPriorityQueue<pair<spg_t,PGQueueable>,entity_inst_t>(max_tok_per_prio, min_cost));
+        }
+        else if (opqueue == io_queue::prioritized)
+        {
+          pqueue = std::unique_ptr<PrioritizedQueue<pair<spg_t,PGQueueable>,entity_inst_t>>(
+              new PrioritizedQueue<pair<spg_t,PGQueueable>,entity_inst_t>(max_tok_per_prio, min_cost));
+        }
+        else if (opqueue == io_queue::mclock_opclass)
+        {
+          pqueue = std::unique_ptr<ceph::mClockOpClassQueue>(new ceph::mClockOpClassQueue(cct));
+        }
+        else if (opqueue == io_queue::mclock_client)
+        {
+          pqueue = std::unique_ptr<ceph::mClockClientQueue>(new ceph::mClockClientQueue(cct));
+        }
       }
     }; // struct ShardData
 
@@ -1704,30 +1709,34 @@ private:
 
   public:
     ShardedOpWQ(uint32_t pnum_shards,
-		OSD *o,
-		time_t ti,
-		time_t si,
-		ShardedThreadPool* tp)
-      : ShardedThreadPool::ShardedWQ<pair<spg_t,PGQueueable>>(ti, si, tp),
-        osd(o),
-        num_shards(pnum_shards) {
-      for (uint32_t i = 0; i < num_shards; i++) {
-	char lock_name[32] = {0};
-	snprintf(lock_name, sizeof(lock_name), "%s.%d", "OSD:ShardedOpWQ:", i);
-	char order_lock[32] = {0};
-	snprintf(order_lock, sizeof(order_lock), "%s.%d",
-		 "OSD:ShardedOpWQ:order:", i);
-	ShardData* one_shard = new ShardData(
-	  lock_name, order_lock,
-	  osd->cct->_conf->osd_op_pq_max_tokens_per_priority, 
-	  osd->cct->_conf->osd_op_pq_min_cost, osd->cct, osd->op_queue);
-	shard_list.push_back(one_shard);
+                OSD *o,
+                time_t ti,
+                time_t si,
+                ShardedThreadPool* tp) : ShardedThreadPool::ShardedWQ<pair<spg_t,PGQueueable>>(ti, si, tp), osd(o), num_shards(pnum_shards)
+    {
+      for (uint32_t i = 0; i < num_shards; i++)
+      {
+        char lock_name[32] = {0};
+        snprintf(lock_name, sizeof(lock_name), "%s.%d", "OSD:ShardedOpWQ:", i);
+
+        char order_lock[32] = {0};
+        snprintf(order_lock, sizeof(order_lock), "%s.%d", "OSD:ShardedOpWQ:order:", i);
+
+        ShardData* one_shard = new ShardData(
+                                       lock_name, order_lock,
+                                       osd->cct->_conf->osd_op_pq_max_tokens_per_priority, 
+                                       osd->cct->_conf->osd_op_pq_min_cost, osd->cct, osd->op_queue);
+
+        shard_list.push_back(one_shard);
       }
     }
-    ~ShardedOpWQ() override {
-      while (!shard_list.empty()) {
-	delete shard_list.back();
-	shard_list.pop_back();
+
+    ~ShardedOpWQ() override
+    {
+      while (!shard_list.empty())
+      {
+        delete shard_list.back();
+        shard_list.pop_back();
       }
     }
 
@@ -1754,55 +1763,76 @@ private:
     /// requeue an old item (at the front of the line)
     void _enqueue_front(pair <spg_t, PGQueueable> item) override;
       
-    void return_waiting_threads() override {
-      for(uint32_t i = 0; i < num_shards; i++) {
-	ShardData* sdata = shard_list[i];
-	assert (NULL != sdata); 
-	sdata->sdata_lock.Lock();
-	sdata->sdata_cond.Signal(); //Yuanguo: notify all threads working on the shard;
-	sdata->sdata_lock.Unlock();
+    void return_waiting_threads() override
+    {
+      for(uint32_t i = 0; i < num_shards; i++)
+      {
+        ShardData* sdata = shard_list[i];
+        assert (NULL != sdata); 
+        sdata->sdata_lock.Lock();
+        sdata->sdata_cond.Signal(); //Yuanguo: notify all threads working on the shard;
+        sdata->sdata_lock.Unlock();
       }
     }
 
-    void dump(Formatter *f) {
-      for(uint32_t i = 0; i < num_shards; i++) {
-	ShardData* sdata = shard_list[i];
-	char lock_name[32] = {0};
-	snprintf(lock_name, sizeof(lock_name), "%s%d", "OSD:ShardedOpWQ:", i);
-	assert (NULL != sdata);
-	sdata->sdata_op_ordering_lock.Lock();
-	f->open_object_section(lock_name);
-	sdata->pqueue->dump(f);
-	f->close_section();
-	sdata->sdata_op_ordering_lock.Unlock();
+    void dump(Formatter *f)
+    {
+      for(uint32_t i = 0; i < num_shards; i++)
+      {
+        ShardData* sdata = shard_list[i];
+
+        char lock_name[32] = {0};
+        snprintf(lock_name, sizeof(lock_name), "%s%d", "OSD:ShardedOpWQ:", i);
+
+        assert (NULL != sdata);
+
+        sdata->sdata_op_ordering_lock.Lock();
+
+        f->open_object_section(lock_name);
+        sdata->pqueue->dump(f);
+        f->close_section();
+
+        sdata->sdata_op_ordering_lock.Unlock();
       }
     }
 
     /// Must be called on ops queued back to front
-    struct Pred {
+    struct Pred
+    {
       spg_t pgid;
       list<OpRequestRef> *out_ops;
       uint64_t reserved_pushes_to_free;
-      Pred(spg_t pg, list<OpRequestRef> *out_ops = 0)
-	: pgid(pg), out_ops(out_ops), reserved_pushes_to_free(0) {}
-      void accumulate(const PGQueueable &op) {
-	reserved_pushes_to_free += op.get_reserved_pushes();
-	if (out_ops) {
-	  boost::optional<OpRequestRef> mop = op.maybe_get_op();
-	  if (mop)
-	    out_ops->push_front(*mop);
-	}
+
+      Pred(spg_t pg, list<OpRequestRef> *out_ops = 0) : pgid(pg), out_ops(out_ops), reserved_pushes_to_free(0)
+      {}
+
+      void accumulate(const PGQueueable &op)
+      {
+        reserved_pushes_to_free += op.get_reserved_pushes();
+        if (out_ops)
+        {
+          boost::optional<OpRequestRef> mop = op.maybe_get_op();
+          if (mop)
+            out_ops->push_front(*mop);
+        }
       }
-      bool operator()(const pair<spg_t, PGQueueable> &op) {
-	if (op.first == pgid) {
-	  accumulate(op.second);
-	  return true;
-	} else {
-	  return false;
-	}
+
+      bool operator()(const pair<spg_t, PGQueueable> &op)
+      {
+        if (op.first == pgid)
+        {
+          accumulate(op.second);
+          return true;
+        }
+        else
+        {
+          return false;
+        }
       }
-      uint64_t get_reserved_pushes_to_free() const {
-	return reserved_pushes_to_free;
+
+      uint64_t get_reserved_pushes_to_free() const
+      {
+        return reserved_pushes_to_free;
       }
     };
 

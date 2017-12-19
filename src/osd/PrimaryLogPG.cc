@@ -1636,86 +1636,110 @@ void PrimaryLogPG::do_request(
   OpRequestRef& op,
   ThreadPool::TPHandle &handle)
 {
-  if (op->osd_trace) {
+  if (op->osd_trace)
+  {
     op->pg_trace.init("pg op", &trace_endpoint, &op->osd_trace);
     op->pg_trace.event("do request");
   }
+
+  //Yuanguo: the client has newer osdmap, I should wait for the newer osdmap;
   // make sure we have a new enough map
   auto p = waiting_for_map.find(op->get_source());
-  if (p != waiting_for_map.end()) {
+  if (p != waiting_for_map.end())
+  {
     // preserve ordering
     dout(20) << __func__ << " waiting_for_map "
-	     << p->first << " not empty, queueing" << dendl;
+             << p->first << " not empty, queueing" << dendl;
+
     p->second.push_back(op);
     op->mark_delayed("waiting_for_map not empty");
     return;
   }
-  if (!have_same_or_newer_map(op->min_epoch)) {
+
+  //Yuanguo: op requires osdmap > op->min_epoch, if not, wait for it;
+  if (!have_same_or_newer_map(op->min_epoch))
+  {
     dout(20) << __func__ << " min " << op->min_epoch
-	     << ", queue on waiting_for_map " << op->get_source() << dendl;
+             << ", queue on waiting_for_map " << op->get_source() << dendl;
     waiting_for_map[op->get_source()].push_back(op);
     op->mark_delayed("op must wait for map");
     return;
   }
 
-  if (can_discard_request(op)) {
+  if (can_discard_request(op))
+  {
     return;
   }
 
   // pg-wide backoffs
   const Message *m = op->get_req();
-  if (m->get_connection()->has_feature(CEPH_FEATURE_RADOS_BACKOFF)) {
+  if (m->get_connection()->has_feature(CEPH_FEATURE_RADOS_BACKOFF))
+  {
     SessionRef session = static_cast<Session*>(m->get_connection()->get_priv());
     if (!session)
       return;  // drop it.
     session->put();  // get_priv takes a ref, and so does the SessionRef
 
-    if (op->get_req()->get_type() == CEPH_MSG_OSD_OP) {
-      if (session->check_backoff(cct, info.pgid,
-				 info.pgid.pgid.get_hobj_start(), m)) {
-	return;
+    if (op->get_req()->get_type() == CEPH_MSG_OSD_OP)
+    {
+      if (session->check_backoff(cct, info.pgid, info.pgid.pgid.get_hobj_start(), m))
+      {
+        return;
       }
 
       bool backoff =
-	is_down() ||
-	is_incomplete() ||
-	(!is_active() && is_peered());
-      if (g_conf->osd_backoff_on_peering && !backoff) {
-	if (is_peering()) {
-	  backoff = true;
-	}
+        is_down() ||
+        is_incomplete() ||
+        (!is_active() && is_peered());
+
+      if (g_conf->osd_backoff_on_peering && !backoff)
+      {
+        if (is_peering())
+        {
+          backoff = true;
+        }
       }
-      if (backoff) {
-	add_pg_backoff(session);
-	return;
+
+      if (backoff)
+      {
+        add_pg_backoff(session);
+        return;
       }
     }
+
     // pg backoff acks at pg-level
-    if (op->get_req()->get_type() == CEPH_MSG_OSD_BACKOFF) {
+    if (op->get_req()->get_type() == CEPH_MSG_OSD_BACKOFF)
+    {
       const MOSDBackoff *ba = static_cast<const MOSDBackoff*>(m);
-      if (ba->begin != ba->end) {
-	handle_backoff(op);
-	return;
+      if (ba->begin != ba->end)
+      {
+        handle_backoff(op);
+        return;
       }
     }
   }
 
-  if (flushes_in_progress > 0) {
+  if (flushes_in_progress > 0)
+  {
     dout(20) << flushes_in_progress
-	     << " flushes_in_progress pending "
-	     << "waiting for active on " << op << dendl;
+             << " flushes_in_progress pending "
+             << "waiting for active on " << op << dendl;
     waiting_for_peered.push_back(op);
     op->mark_delayed("waiting for peered");
     return;
   }
 
-  if (!is_peered()) {
+  if (!is_peered())
+  {
     // Delay unless PGBackend says it's ok
-    if (pgbackend->can_handle_while_inactive(op)) {
+    if (pgbackend->can_handle_while_inactive(op))
+    {
       bool handled = pgbackend->handle_message(op);
       assert(handled);
       return;
-    } else {
+    }
+    else
+    {
       waiting_for_peered.push_back(op);
       op->mark_delayed("waiting for peered");
       return;
@@ -1723,25 +1747,30 @@ void PrimaryLogPG::do_request(
   }
 
   assert(is_peered() && flushes_in_progress == 0);
+
   if (pgbackend->handle_message(op))
     return;
 
-  switch (op->get_req()->get_type()) {
+  switch (op->get_req()->get_type())
+  {
   case CEPH_MSG_OSD_OP:
   case CEPH_MSG_OSD_BACKOFF:
-    if (!is_active()) {
+    if (!is_active())
+    {
       dout(20) << " peered, not active, waiting for active on " << op << dendl;
       waiting_for_active.push_back(op);
       op->mark_delayed("waiting for active");
       return;
     }
-    switch (op->get_req()->get_type()) {
+    switch (op->get_req()->get_type())
+    {
     case CEPH_MSG_OSD_OP:
       // verify client features
       if ((pool.info.has_tiers() || pool.info.is_tier()) &&
-	  !op->has_feature(CEPH_FEATURE_OSD_CACHEPOOL)) {
-	osd->reply_op_error(op, -EOPNOTSUPP);
-	return;
+          !op->has_feature(CEPH_FEATURE_OSD_CACHEPOOL))
+      {
+        osd->reply_op_error(op, -EOPNOTSUPP);
+        return;
       }
       do_op(op);
       break;
@@ -1774,21 +1803,21 @@ void PrimaryLogPG::do_request(
 
   case MSG_OSD_SCRUB_RESERVE:
     {
-      const MOSDScrubReserve *m =
-	static_cast<const MOSDScrubReserve*>(op->get_req());
-      switch (m->type) {
-      case MOSDScrubReserve::REQUEST:
-	handle_scrub_reserve_request(op);
-	break;
-      case MOSDScrubReserve::GRANT:
-	handle_scrub_reserve_grant(op, m->from);
-	break;
-      case MOSDScrubReserve::REJECT:
-	handle_scrub_reserve_reject(op, m->from);
-	break;
-      case MOSDScrubReserve::RELEASE:
-	handle_scrub_reserve_release(op);
-	break;
+      const MOSDScrubReserve *m = static_cast<const MOSDScrubReserve*>(op->get_req());
+      switch (m->type)
+      {
+        case MOSDScrubReserve::REQUEST:
+          handle_scrub_reserve_request(op);
+          break;
+        case MOSDScrubReserve::GRANT:
+          handle_scrub_reserve_grant(op, m->from);
+          break;
+        case MOSDScrubReserve::REJECT:
+          handle_scrub_reserve_reject(op, m->from);
+          break;
+        case MOSDScrubReserve::RELEASE:
+          handle_scrub_reserve_release(op);
+          break;
       }
     }
     break;
