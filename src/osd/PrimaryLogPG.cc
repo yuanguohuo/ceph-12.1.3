@@ -1869,7 +1869,8 @@ void PrimaryLogPG::do_op(OpRequestRef& op)
   // change anything that will break other reads on m (operator<<).
   MOSDOp *m = static_cast<MOSDOp*>(op->get_nonconst_req());
   assert(m->get_type() == CEPH_MSG_OSD_OP);
-  if (m->finish_decode()) {
+  if (m->finish_decode())
+  {
     op->reset_desc();   // for TrackedOp
     m->clear_payload();
   }
@@ -1879,106 +1880,131 @@ void PrimaryLogPG::do_op(OpRequestRef& op)
   hobject_t head = m->get_hobj();
   head.snap = CEPH_NOSNAP;
 
-  if (!info.pgid.pgid.contains(
-	info.pgid.pgid.get_split_bits(pool.info.get_pg_num()), head)) {
+  if (!info.pgid.pgid.contains(info.pgid.pgid.get_split_bits(pool.info.get_pg_num()), head))
+  {
     derr << __func__ << " " << info.pgid.pgid << " does not contain "
-	 << head << " pg_num " << pool.info.get_pg_num() << " hash "
-	 << std::hex << head.get_hash() << std::dec << dendl;
-    osd->clog->warn() << info.pgid.pgid << " does not contain " << head
-		      << " op " << *m;
+         << head << " pg_num " << pool.info.get_pg_num() << " hash "
+         << std::hex << head.get_hash() << std::dec << dendl;
+
+    osd->clog->warn() << info.pgid.pgid << " does not contain " << head << " op " << *m;
     assert(!cct->_conf->osd_debug_misdirected_ops);
     return;
   }
 
-  bool can_backoff =
-    m->get_connection()->has_feature(CEPH_FEATURE_RADOS_BACKOFF);
+  bool can_backoff = m->get_connection()->has_feature(CEPH_FEATURE_RADOS_BACKOFF);
+
   SessionRef session;
-  if (can_backoff) {
+  if (can_backoff)
+  {
     session = static_cast<Session*>(m->get_connection()->get_priv());
-    if (!session.get()) {
+    if (!session.get())
+    {
       dout(10) << __func__ << " no session" << dendl;
       return;
     }
     session->put();  // get_priv() takes a ref, and so does the intrusive_ptr
 
-    if (session->check_backoff(cct, info.pgid, head, m)) {
+    if (session->check_backoff(cct, info.pgid, head, m))
+    {
       return;
     }
   }
 
-  if (m->has_flag(CEPH_OSD_FLAG_PARALLELEXEC)) {
+  if (m->has_flag(CEPH_OSD_FLAG_PARALLELEXEC))
+  {
     // not implemented.
     dout(20) << __func__ << ": PARALLELEXEC not implemented " << *m << dendl;
     osd->reply_op_error(op, -EINVAL);
     return;
   }
 
-  if (op->rmw_flags == 0) {
+  if (op->rmw_flags == 0)
+  {
     int r = osd->osd->init_op_flags(op);
-    if (r) {
+    if (r)
+    {
       osd->reply_op_error(op, r);
       return;
     }
   }
 
-  if ((m->get_flags() & (CEPH_OSD_FLAG_BALANCE_READS |
-			 CEPH_OSD_FLAG_LOCALIZE_READS)) &&
-      op->may_read() &&
-      !(op->may_write() || op->may_cache())) {
+  //Yuanguo:  normally, a request can be sent to primary only;
+  //          but, if it's a pure read request (no write or cache), and the client wants to make optimization, the 
+  //          request can be sent to a replica, for balance purpose, or the replica is localhost (thus has no network
+  //          overload)
+  if ((m->get_flags() & (CEPH_OSD_FLAG_BALANCE_READS | CEPH_OSD_FLAG_LOCALIZE_READS)) &&  //Yuanguo: cond-1. has BALANCE_READ or LOCALIZE_READ flag
+      op->may_read() &&                              //Yuanguo: cond-2. this request has read op;
+      !(op->may_write() || op->may_cache()))         //Yuanguo: cond-3. this request has no write or cache op;
+  {
+    //Yuanguo: in this case, either primary or replica is OK; if neither primary nor replica, mis-directed.
     // balanced reads; any replica will do
-    if (!(is_primary() || is_replica())) {
+    if (!(is_primary() || is_replica()))
+    {
       osd->handle_misdirected_op(this, op);
       return;
     }
-  } else {
+  }
+  else
+  {
+    //Yuanguo: in this case, only primary is OK; if not primary, mis-directed.
     // normal case; must be primary
-    if (!is_primary()) {
+    if (!is_primary())
+    {
       osd->handle_misdirected_op(this, op);
       return;
     }
   }
 
-  if (!op_has_sufficient_caps(op)) {
+  if (!op_has_sufficient_caps(op))
+  {
     osd->reply_op_error(op, -EPERM);
     return;
   }
 
-  if (op->includes_pg_op()) {
+  if (op->includes_pg_op())
+  {
     return do_pg_op(op);
   }
 
   // object name too long?
-  if (m->get_oid().name.size() > cct->_conf->osd_max_object_name_len) {
+  if (m->get_oid().name.size() > cct->_conf->osd_max_object_name_len)
+  {
     dout(4) << "do_op name is longer than "
-	    << cct->_conf->osd_max_object_name_len
-	    << " bytes" << dendl;
-    osd->reply_op_error(op, -ENAMETOOLONG);
-    return;
-  }
-  if (m->get_hobj().get_key().size() > cct->_conf->osd_max_object_name_len) {
-    dout(4) << "do_op locator is longer than "
-	    << cct->_conf->osd_max_object_name_len
-	    << " bytes" << dendl;
-    osd->reply_op_error(op, -ENAMETOOLONG);
-    return;
-  }
-  if (m->get_hobj().nspace.size() > cct->_conf->osd_max_object_namespace_len) {
-    dout(4) << "do_op namespace is longer than "
-	    << cct->_conf->osd_max_object_namespace_len
-	    << " bytes" << dendl;
+            << cct->_conf->osd_max_object_name_len
+            << " bytes" << dendl;
     osd->reply_op_error(op, -ENAMETOOLONG);
     return;
   }
 
-  if (int r = osd->store->validate_hobject_key(head)) {
+  if (m->get_hobj().get_key().size() > cct->_conf->osd_max_object_name_len)
+  {
+    dout(4) << "do_op locator is longer than "
+            << cct->_conf->osd_max_object_name_len
+            << " bytes" << dendl;
+    osd->reply_op_error(op, -ENAMETOOLONG);
+    return;
+  }
+
+  if (m->get_hobj().nspace.size() > cct->_conf->osd_max_object_namespace_len)
+  {
+    dout(4) << "do_op namespace is longer than "
+            << cct->_conf->osd_max_object_namespace_len
+            << " bytes" << dendl;
+    osd->reply_op_error(op, -ENAMETOOLONG);
+    return;
+  }
+
+  if (int r = osd->store->validate_hobject_key(head))
+  {
     dout(4) << "do_op object " << head << " invalid for backing store: "
-	    << r << dendl;
+            << r << dendl;
     osd->reply_op_error(op, r);
     return;
   }
 
   // blacklisted?
-  if (get_osdmap()->is_blacklisted(m->get_source_addr())) {
+  if (get_osdmap()->is_blacklisted(m->get_source_addr()))
+  {
     dout(10) << "do_op " << m->get_source_addr() << " is blacklisted" << dendl;
     osd->reply_op_error(op, -EBLACKLISTED);
     return;
@@ -1995,34 +2021,42 @@ void PrimaryLogPG::do_op(OpRequestRef& op)
   // bypass all full checks anyway.  If this op isn't write or
   // read-ordered, we skip.
   // FIXME: we exclude mds writes for now.
-  if (write_ordered && !(m->get_source().is_mds() ||
-			 m->has_flag(CEPH_OSD_FLAG_FULL_TRY) ||
-			 m->has_flag(CEPH_OSD_FLAG_FULL_FORCE)) &&
-      info.history.last_epoch_marked_full > m->get_map_epoch()) {
-    dout(10) << __func__ << " discarding op sent before full " << m << " "
-	     << *m << dendl;
+  //
+  //Yuanguo: normally, write request should be discarded if cluster or pool is marked full.
+  //         but, if the request is originated from mds, or FULL_TRY flag is set, or FULL_FORCE is set, we should not
+  //         discard it.
+  if (write_ordered &&    //Yuanguo: this is a write request;
+      !(m->get_source().is_mds() ||               //Yuanguo: originated from mds
+        m->has_flag(CEPH_OSD_FLAG_FULL_TRY) ||    //Yuanguo: FULL_TRY set
+        m->has_flag(CEPH_OSD_FLAG_FULL_FORCE)) && //Yuanguo: FULL_FORCE set
+       info.history.last_epoch_marked_full > m->get_map_epoch())  //Yuanguo: marked full
+  {
+    dout(10) << __func__ << " discarding op sent before full " << m << " " << *m << dendl;
     return;
   }
+
   // mds should have stopped writing before this point.
   // We can't allow OSD to become non-startable even if mds
   // could be writing as part of file removals.
   ostringstream ss;
-  if (write_ordered && osd->check_failsafe_full(ss)) {
-    dout(10) << __func__ << " fail-safe full check failed, dropping request"
-             << ss.str()
-	     << dendl;
+  if (write_ordered && osd->check_failsafe_full(ss))
+  {
+    dout(10) << __func__ << " fail-safe full check failed, dropping request" << ss.str() << dendl;
     return;
   }
-  int64_t poolid = get_pgid().pool();
-  if (op->may_write()) {
 
+  int64_t poolid = get_pgid().pool();
+  if (op->may_write())
+  {
     const pg_pool_t *pi = get_osdmap()->get_pg_pool(poolid);
-    if (!pi) {
+    if (!pi)
+    {
       return;
     }
 
     // invalid?
-    if (m->get_snapid() != CEPH_NOSNAP) {
+    if (m->get_snapid() != CEPH_NOSNAP)
+    {
       dout(20) << __func__ << ": write to clone not valid " << *m << dendl;
       osd->reply_op_error(op, -EINVAL);
       return;
@@ -2030,7 +2064,8 @@ void PrimaryLogPG::do_op(OpRequestRef& op)
 
     // too big?
     if (cct->_conf->osd_max_write_size &&
-        m->get_data_len() > cct->_conf->osd_max_write_size << 20) {
+        m->get_data_len() > cct->_conf->osd_max_write_size << 20)
+    {
       // journal can't hold commit!
       derr << "do_op msg data len " << m->get_data_len()
            << " > osd_max_write_size " << (cct->_conf->osd_max_write_size << 20)
@@ -2041,42 +2076,51 @@ void PrimaryLogPG::do_op(OpRequestRef& op)
   }
 
   dout(10) << "do_op " << *m
-	   << (op->may_write() ? " may_write" : "")
-	   << (op->may_read() ? " may_read" : "")
-	   << (op->may_cache() ? " may_cache" : "")
-	   << " -> " << (write_ordered ? "write-ordered" : "read-ordered")
-	   << " flags " << ceph_osd_flag_string(m->get_flags())
-	   << dendl;
+           << (op->may_write() ? " may_write" : "")
+           << (op->may_read() ? " may_read" : "")
+           << (op->may_cache() ? " may_cache" : "")
+           << " -> " << (write_ordered ? "write-ordered" : "read-ordered")
+           << " flags " << ceph_osd_flag_string(m->get_flags())
+           << dendl;
 
   // missing object?
-  if (is_unreadable_object(head)) {
-    if (!is_primary()) {
+  if (is_unreadable_object(head))
+  {
+    if (!is_primary())
+    {
       osd->reply_op_error(op, -EAGAIN);
       return;
     }
+
     if (can_backoff &&
-	(g_conf->osd_backoff_on_degraded ||
-	 (g_conf->osd_backoff_on_unfound && missing_loc.is_unfound(head)))) {
+        (g_conf->osd_backoff_on_degraded || (g_conf->osd_backoff_on_unfound && missing_loc.is_unfound(head))))
+    {
       add_backoff(session, head, head);
       maybe_kick_recovery(head);
-    } else {
+    }
+    else
+    {
       wait_for_unreadable_object(head, op);
     }
     return;
   }
 
   // degraded object?
-  if (write_ordered && is_degraded_or_backfilling_object(head)) {
-    if (can_backoff && g_conf->osd_backoff_on_degraded) {
+  if (write_ordered && is_degraded_or_backfilling_object(head))
+  {
+    if (can_backoff && g_conf->osd_backoff_on_degraded)
+    {
       add_backoff(session, head, head);
-    } else {
+    }
+    else
+    {
       wait_for_degraded_object(head, op);
     }
     return;
   }
 
-  if (write_ordered &&
-      scrubber.write_blocked_by_scrub(head)) {
+  if (write_ordered && scrubber.write_blocked_by_scrub(head))
+  {
     dout(20) << __func__ << ": waiting for scrub" << dendl;
     waiting_for_scrub.push_back(op);
     op->mark_delayed("waiting for scrub");
@@ -2084,24 +2128,24 @@ void PrimaryLogPG::do_op(OpRequestRef& op)
   }
 
   // blocked on snap?
-  map<hobject_t, snapid_t>::iterator blocked_iter =
-    objects_blocked_on_degraded_snap.find(head);
-  if (write_ordered && blocked_iter != objects_blocked_on_degraded_snap.end()) {
+  map<hobject_t, snapid_t>::iterator blocked_iter = objects_blocked_on_degraded_snap.find(head);
+  if (write_ordered && blocked_iter != objects_blocked_on_degraded_snap.end())
+  {
     hobject_t to_wait_on(head);
     to_wait_on.snap = blocked_iter->second;
     wait_for_degraded_object(to_wait_on, op);
     return;
   }
-  map<hobject_t, ObjectContextRef>::iterator blocked_snap_promote_iter =
-    objects_blocked_on_snap_promotion.find(head);
-  if (write_ordered && 
-      blocked_snap_promote_iter != objects_blocked_on_snap_promotion.end()) {
-    wait_for_blocked_object(
-      blocked_snap_promote_iter->second->obs.oi.soid,
-      op);
+
+  map<hobject_t, ObjectContextRef>::iterator blocked_snap_promote_iter = objects_blocked_on_snap_promotion.find(head);
+  if (write_ordered && blocked_snap_promote_iter != objects_blocked_on_snap_promotion.end())
+  {
+    wait_for_blocked_object(blocked_snap_promote_iter->second->obs.oi.soid, op);
     return;
   }
-  if (write_ordered && objects_blocked_on_cache_full.count(head)) {
+
+  if (write_ordered && objects_blocked_on_cache_full.count(head))
+  {
     block_write_on_full_cache(head, op);
     return;
   }
@@ -2109,19 +2153,22 @@ void PrimaryLogPG::do_op(OpRequestRef& op)
   // missing snapdir?
   hobject_t snapdir = head.get_snapdir();
 
-  if (is_unreadable_object(snapdir)) {
+  if (is_unreadable_object(snapdir))
+  {
     wait_for_unreadable_object(snapdir, op);
     return;
   }
 
   // degraded object?
-  if (write_ordered && is_degraded_or_backfilling_object(snapdir)) {
+  if (write_ordered && is_degraded_or_backfilling_object(snapdir))
+  {
     wait_for_degraded_object(snapdir, op);
     return;
   }
 
   // dup/resent?
-  if (op->may_write() || op->may_cache()) {
+  if (op->may_write() || op->may_cache())
+  {
     // warning: we will get back *a* request for this reqid, but not
     // necessarily the most recent.  this happens with flush and
     // promote ops, but we can't possible have both in our log where
@@ -2130,18 +2177,20 @@ void PrimaryLogPG::do_op(OpRequestRef& op)
     eversion_t version;
     version_t user_version;
     int return_code = 0;
-    bool got = check_in_progress_op(
-      m->get_reqid(), &version, &user_version, &return_code);
-    if (got) {
-      dout(3) << __func__ << " dup " << m->get_reqid()
-	      << " version " << version << dendl;
-      if (already_complete(version)) {
-	osd->reply_op_error(op, return_code, version, user_version);
-      } else {
-	dout(10) << " waiting for " << version << " to commit" << dendl;
+    bool got = check_in_progress_op(m->get_reqid(), &version, &user_version, &return_code);
+    if (got)
+    {
+      dout(3) << __func__ << " dup " << m->get_reqid() << " version " << version << dendl;
+      if (already_complete(version))
+      {
+        osd->reply_op_error(op, return_code, version, user_version);
+      }
+      else
+      {
+        dout(10) << " waiting for " << version << " to commit" << dendl;
         // always queue ondisk waiters, so that we can requeue if needed
-	waiting_for_ondisk[version].push_back(make_pair(op, user_version));
-	op->mark_delayed("waiting for ondisk");
+        waiting_for_ondisk[version].push_back(make_pair(op, user_version));
+        op->mark_delayed("waiting for ondisk");
       }
       return;
     }
@@ -2153,73 +2202,82 @@ void PrimaryLogPG::do_op(OpRequestRef& op)
   const hobject_t& oid = m->get_hobj();
 
   // io blocked on obc?
-  if (!m->has_flag(CEPH_OSD_FLAG_FLUSH) &&
-      maybe_await_blocked_snapset(oid, op)) {
+  if (!m->has_flag(CEPH_OSD_FLAG_FLUSH) && maybe_await_blocked_snapset(oid, op))
+  {
     return;
   }
 
-  int r = find_object_context(
-    oid, &obc, can_create,
-    m->has_flag(CEPH_OSD_FLAG_MAP_SNAP_CLONE),
-    &missing_oid);
+  int r = find_object_context(oid, &obc, can_create, m->has_flag(CEPH_OSD_FLAG_MAP_SNAP_CLONE), &missing_oid);
 
-  if (r == -EAGAIN) {
+  if (r == -EAGAIN)
+  {
     // If we're not the primary of this OSD, we just return -EAGAIN. Otherwise,
     // we have to wait for the object.
-    if (is_primary()) {
+    if (is_primary())
+    {
       // missing the specific snap we need; requeue and wait.
       assert(!op->may_write()); // only happens on a read/cache
       wait_for_unreadable_object(missing_oid, op);
       return;
     }
-  } else if (r == 0) {
-    if (is_unreadable_object(obc->obs.oi.soid)) {
-      dout(10) << __func__ << ": clone " << obc->obs.oi.soid
-	       << " is unreadable, waiting" << dendl;
+  }
+  else if (r == 0)
+  {
+    if (is_unreadable_object(obc->obs.oi.soid))
+    {
+      dout(10) << __func__ << ": clone " << obc->obs.oi.soid << " is unreadable, waiting" << dendl;
       wait_for_unreadable_object(obc->obs.oi.soid, op);
       return;
     }
 
     // degraded object?  (the check above was for head; this could be a clone)
     if (write_ordered &&
-	obc->obs.oi.soid.snap != CEPH_NOSNAP &&
-	is_degraded_or_backfilling_object(obc->obs.oi.soid)) {
+        obc->obs.oi.soid.snap != CEPH_NOSNAP &&
+        is_degraded_or_backfilling_object(obc->obs.oi.soid))
+    {
       dout(10) << __func__ << ": clone " << obc->obs.oi.soid
-	       << " is degraded, waiting" << dendl;
+               << " is degraded, waiting" << dendl;
       wait_for_degraded_object(obc->obs.oi.soid, op);
       return;
     }
   }
 
   bool in_hit_set = false;
-  if (hit_set) {
-    if (obc.get()) {
+  if (hit_set)
+  {
+    if (obc.get())
+    {
       if (obc->obs.oi.soid != hobject_t() && hit_set->contains(obc->obs.oi.soid))
-	in_hit_set = true;
-    } else {
+        in_hit_set = true;
+    }
+    else
+    {
       if (missing_oid != hobject_t() && hit_set->contains(missing_oid))
         in_hit_set = true;
     }
-    if (!op->hitset_inserted) {
+
+    if (!op->hitset_inserted)
+    {
       hit_set->insert(oid);
       op->hitset_inserted = true;
       if (hit_set->is_full() ||
-          hit_set_start_stamp + pool.info.hit_set_period <= m->get_recv_stamp()) {
+          hit_set_start_stamp + pool.info.hit_set_period <= m->get_recv_stamp())
+      {
         hit_set_persist();
       }
     }
   }
 
-  if (agent_state) {
+  if (agent_state)
+  {
     if (agent_choose_mode(false, op))
       return;
   }
 
-  if (obc.get() && obc->obs.exists && obc->obs.oi.has_manifest()) {
-    if (maybe_handle_manifest(op,
-			       write_ordered,
-			       obc))
-    return;
+  if (obc.get() && obc->obs.exists && obc->obs.oi.has_manifest())
+  {
+    if (maybe_handle_manifest(op, write_ordered, obc))
+      return;
   }
 
   if (maybe_handle_cache(op,
@@ -2231,18 +2289,24 @@ void PrimaryLogPG::do_op(OpRequestRef& op)
 			 in_hit_set))
     return;
 
-  if (r && (r != -ENOENT || !obc)) {
+  if (r && (r != -ENOENT || !obc))
+  {
     // copy the reqids for copy get on ENOENT
     if (r == -ENOENT &&
-	(m->ops[0].op.op == CEPH_OSD_OP_COPY_GET)) {
+	      (m->ops[0].op.op == CEPH_OSD_OP_COPY_GET))
+    {
       fill_in_copy_get_noent(op, oid, m->ops[0]);
       return;
     }
+
     dout(20) << __func__ << ": find_object_context got error " << r << dendl;
-    if (op->may_write() &&
-	get_osdmap()->require_osd_release >= CEPH_RELEASE_KRAKEN) {
+
+    if (op->may_write() && get_osdmap()->require_osd_release >= CEPH_RELEASE_KRAKEN)
+    {
       record_write_error(op, oid, nullptr, r);
-    } else {
+    }
+    else
+    {
       osd->reply_op_error(op, r);
     }
     return;
@@ -2250,29 +2314,29 @@ void PrimaryLogPG::do_op(OpRequestRef& op)
 
   // make sure locator is consistent
   object_locator_t oloc(obc->obs.oi.soid);
-  if (m->get_object_locator() != oloc) {
-    dout(10) << " provided locator " << m->get_object_locator() 
-	     << " != object's " << obc->obs.oi.soid << dendl;
-    osd->clog->warn() << "bad locator " << m->get_object_locator() 
-		     << " on object " << oloc
-		      << " op " << *m;
+  if (m->get_object_locator() != oloc)
+  {
+    dout(10) << " provided locator " << m->get_object_locator() << " != object's " << obc->obs.oi.soid << dendl;
+    osd->clog->warn() << "bad locator " << m->get_object_locator() << " on object " << oloc << " op " << *m;
   }
 
   // io blocked on obc?
-  if (obc->is_blocked() &&
-      !m->has_flag(CEPH_OSD_FLAG_FLUSH)) {
+  if (obc->is_blocked() && !m->has_flag(CEPH_OSD_FLAG_FLUSH))
+  {
     wait_for_blocked_object(obc->obs.oi.soid, op);
     return;
   }
 
   dout(25) << __func__ << " oi " << obc->obs.oi << dendl;
 
-  for (vector<OSDOp>::iterator p = m->ops.begin(); p != m->ops.end(); ++p) {
+  for (vector<OSDOp>::iterator p = m->ops.begin(); p != m->ops.end(); ++p)
+  {
     OSDOp& osd_op = *p;
 
     // make sure LIST_SNAPS is on CEPH_SNAPDIR and nothing else
     if (osd_op.op.op == CEPH_OSD_OP_LIST_SNAPS &&
-	m->get_snapid() != CEPH_SNAPDIR) {
+        m->get_snapid() != CEPH_SNAPDIR)
+    {
       dout(10) << "LIST_SNAPS with incorrect context" << dendl;
       osd->reply_op_error(op, -EINVAL);
       return;
@@ -2292,57 +2356,71 @@ void PrimaryLogPG::do_op(OpRequestRef& op)
   if (ctx->snapset_obc && !ctx->snapset_obc->obs.exists)
     ctx->snapset_obc = ObjectContextRef();
 
-  if (m->has_flag(CEPH_OSD_FLAG_SKIPRWLOCKS)) {
+  if (m->has_flag(CEPH_OSD_FLAG_SKIPRWLOCKS))
+  {
     dout(20) << __func__ << ": skipping rw locks" << dendl;
-  } else if (m->get_flags() & CEPH_OSD_FLAG_FLUSH) {
+  }
+  else if (m->get_flags() & CEPH_OSD_FLAG_FLUSH)
+  {
     dout(20) << __func__ << ": part of flush, will ignore write lock" << dendl;
 
     // verify there is in fact a flush in progress
     // FIXME: we could make this a stronger test.
     map<hobject_t,FlushOpRef>::iterator p = flush_ops.find(obc->obs.oi.soid);
-    if (p == flush_ops.end()) {
+    if (p == flush_ops.end())
+    {
       dout(10) << __func__ << " no flush in progress, aborting" << dendl;
       reply_ctx(ctx, -EINVAL);
       return;
     }
-  } else if (!get_rw_locks(write_ordered, ctx)) {
+  }
+  else if (!get_rw_locks(write_ordered, ctx))
+  {
     dout(20) << __func__ << " waiting for rw locks " << dendl;
     op->mark_delayed("waiting for rw locks");
     close_op_ctx(ctx);
     return;
   }
+
   dout(20) << __func__ << " obc " << *obc << dendl;
 
-  if (r) {
+  if (r)
+  {
     dout(20) << __func__ << " returned an error: " << r << dendl;
+
     close_op_ctx(ctx);
-    if (op->may_write() &&
-	get_osdmap()->require_osd_release >= CEPH_RELEASE_KRAKEN) {
+
+    if (op->may_write() && get_osdmap()->require_osd_release >= CEPH_RELEASE_KRAKEN)
+    {
       record_write_error(op, oid, nullptr, r);
-    } else {
+    }
+    else
+    {
       osd->reply_op_error(op, r);
     }
     return;
   }
 
-  if (m->has_flag(CEPH_OSD_FLAG_IGNORE_CACHE)) {
+  if (m->has_flag(CEPH_OSD_FLAG_IGNORE_CACHE))
+  {
     ctx->ignore_cache = true;
   }
 
-  if ((op->may_read()) && (obc->obs.oi.is_lost())) {
+  if ((op->may_read()) && (obc->obs.oi.is_lost()))
+  {
     // This object is lost. Reading from it returns an error.
-    dout(20) << __func__ << ": object " << obc->obs.oi.soid
-	     << " is lost" << dendl;
+    dout(20) << __func__ << ": object " << obc->obs.oi.soid << " is lost" << dendl;
     reply_ctx(ctx, -ENFILE);
     return;
   }
+
   if (!op->may_write() &&
       !op->may_cache() &&
-      (!obc->obs.exists ||
-       ((m->get_snapid() != CEPH_SNAPDIR) &&
-	obc->obs.oi.is_whiteout()))) {
+      (!obc->obs.exists || ((m->get_snapid() != CEPH_SNAPDIR) && obc->obs.oi.is_whiteout())))
+  {
     // copy the reqids for copy get on ENOENT
-    if (m->ops[0].op.op == CEPH_OSD_OP_COPY_GET) {
+    if (m->ops[0].op.op == CEPH_OSD_OP_COPY_GET)
+    {
       fill_in_copy_get_noent(op, oid, m->ops[0]);
       close_op_ctx(ctx);
       return;
@@ -2354,20 +2432,29 @@ void PrimaryLogPG::do_op(OpRequestRef& op)
   op->mark_started();
 
   execute_ctx(ctx);
+
   utime_t prepare_latency = ceph_clock_now();
   prepare_latency -= op->get_dequeued_time();
   osd->logger->tinc(l_osd_op_prepare_lat, prepare_latency);
-  if (op->may_read() && op->may_write()) {
+
+  if (op->may_read() && op->may_write())
+  {
     osd->logger->tinc(l_osd_op_rw_prepare_lat, prepare_latency);
-  } else if (op->may_read()) {
+  }
+  else if (op->may_read())
+  {
     osd->logger->tinc(l_osd_op_r_prepare_lat, prepare_latency);
-  } else if (op->may_write() || op->may_cache()) {
+  }
+  else if (op->may_write() || op->may_cache())
+  {
     osd->logger->tinc(l_osd_op_w_prepare_lat, prepare_latency);
   }
 
   // force recovery of the oldest missing object if too many logs
   maybe_force_recovery();
 }
+
+
 PrimaryLogPG::cache_result_t PrimaryLogPG::maybe_handle_manifest_detail(
   OpRequestRef op,
   bool write_ordered,
@@ -9772,20 +9859,24 @@ void PrimaryLogPG::handle_watch_timeout(WatchRef watch)
   simple_opc_submit(std::move(ctx));
 }
 
-ObjectContextRef PrimaryLogPG::create_object_context(const object_info_t& oi,
-						     SnapSetContext *ssc)
+ObjectContextRef PrimaryLogPG::create_object_context(const object_info_t& oi, SnapSetContext *ssc)
 {
   ObjectContextRef obc(object_contexts.lookup_or_create(oi.soid));
   assert(obc->destructor_callback == NULL);
+
   obc->destructor_callback = new C_PG_ObjectContext(this, obc.get());  
   obc->obs.oi = oi;
   obc->obs.exists = false;
   obc->ssc = ssc;
+
   if (ssc)
     register_snapset_context(ssc);
+
   dout(10) << "create_object_context " << (void*)obc.get() << " " << oi.soid << " " << dendl;
+
   if (is_active())
     populate_obc_watchers(obc);
+
   return obc;
 }
 
@@ -9794,58 +9885,66 @@ ObjectContextRef PrimaryLogPG::get_object_context(
   bool can_create,
   const map<string, bufferlist> *attrs)
 {
-  assert(
-    attrs || !pg_log.get_missing().is_missing(soid) ||
-    // or this is a revert... see recover_primary()
-    (pg_log.get_log().objects.count(soid) &&
-      pg_log.get_log().objects.find(soid)->second->op ==
-      pg_log_entry_t::LOST_REVERT));
+  assert(attrs || 
+         !pg_log.get_missing().is_missing(soid) ||
+         // or this is a revert... see recover_primary()
+         (pg_log.get_log().objects.count(soid) && pg_log.get_log().objects.find(soid)->second->op == pg_log_entry_t::LOST_REVERT));
+
   ObjectContextRef obc = object_contexts.lookup(soid);
   osd->logger->inc(l_osd_object_ctx_cache_total);
-  if (obc) {
+
+  if (obc)
+  {
     osd->logger->inc(l_osd_object_ctx_cache_hit);
-    dout(10) << __func__ << ": found obc in cache: " << obc
-	     << dendl;
-  } else {
+    dout(10) << __func__ << ": found obc in cache: " << obc << dendl;
+  }
+  else
+  {
     dout(10) << __func__ << ": obc NOT found in cache: " << soid << dendl;
     // check disk
     bufferlist bv;
-    if (attrs) {
+    if (attrs)
+    {
       assert(attrs->count(OI_ATTR));
       bv = attrs->find(OI_ATTR)->second;
-    } else {
+    }
+    else
+    {
       int r = pgbackend->objects_get_attr(soid, OI_ATTR, &bv);
-      if (r < 0) {
-	if (!can_create) {
-	  dout(10) << __func__ << ": no obc for soid "
-		   << soid << " and !can_create"
-		   << dendl;
-	  return ObjectContextRef();   // -ENOENT!
-	}
+      if (r < 0)
+      {
+        if (!can_create)
+        {
+          dout(10) << __func__ << ": no obc for soid " << soid << " and !can_create" << dendl;
+          return ObjectContextRef();   // -ENOENT!
+        }
 
-	dout(10) << __func__ << ": no obc for soid "
-		 << soid << " but can_create"
-		 << dendl;
-	// new object.
-	object_info_t oi(soid);
-	SnapSetContext *ssc = get_snapset_context(
-	  soid, true, 0, false);
+        dout(10) << __func__ << ": no obc for soid " << soid << " but can_create" << dendl;
+
+        // new object.
+        object_info_t oi(soid);
+        SnapSetContext *ssc = get_snapset_context(soid, true, 0, false);
         assert(ssc);
-	obc = create_object_context(oi, ssc);
-	dout(10) << __func__ << ": " << obc << " " << soid
-		 << " " << obc->rwstate
-		 << " oi: " << obc->obs.oi
-		 << " ssc: " << obc->ssc
-		 << " snapset: " << obc->ssc->snapset << dendl;
-	return obc;
+
+        obc = create_object_context(oi, ssc);
+
+        dout(10) << __func__ << ": " << obc << " " << soid
+                 << " " << obc->rwstate
+                 << " oi: " << obc->obs.oi
+                 << " ssc: " << obc->ssc
+                 << " snapset: " << obc->ssc->snapset << dendl;
+        return obc;
       }
     }
 
     object_info_t oi;
-    try {
+    try
+    {
       bufferlist::iterator bliter = bv.begin();
       ::decode(oi, bliter);
-    } catch (...) {
+    }
+    catch (...)
+    {
       dout(0) << __func__ << ": obc corrupt: " << soid << dendl;
       return ObjectContextRef();   // -ENOENT!
     }
@@ -9857,30 +9956,30 @@ ObjectContextRef PrimaryLogPG::get_object_context(
     obc->obs.oi = oi;
     obc->obs.exists = true;
 
-    obc->ssc = get_snapset_context(
-      soid, true,
-      soid.has_snapset() ? attrs : 0);
+    obc->ssc = get_snapset_context(soid, true, soid.has_snapset() ? attrs : 0);
 
     if (is_active())
       populate_obc_watchers(obc);
 
-    if (pool.info.require_rollback()) {
-      if (attrs) {
-	obc->attr_cache = *attrs;
-      } else {
-	int r = pgbackend->objects_get_attrs(
-	  soid,
-	  &obc->attr_cache);
-	assert(r == 0);
+    if (pool.info.require_rollback())
+    {
+      if (attrs)
+      {
+        obc->attr_cache = *attrs;
+      }
+      else
+      {
+        int r = pgbackend->objects_get_attrs(soid, &obc->attr_cache);
+        assert(r == 0);
       }
     }
 
-    dout(10) << __func__ << ": creating obc from disk: " << obc
-	     << dendl;
+    dout(10) << __func__ << ": creating obc from disk: " << obc << dendl;
   }
 
   // XXX: Caller doesn't expect this
-  if (obc->ssc == NULL) {
+  if (obc->ssc == NULL)
+  {
     derr << __func__ << ": obc->ssc not available, not returning context" << dendl;
     return ObjectContextRef();   // -ENOENT!
   }
@@ -9929,18 +10028,22 @@ int PrimaryLogPG::find_object_context(const hobject_t& oid,
 {
   FUNCTRACE();
   assert(oid.pool == static_cast<int64_t>(info.pgid.pool()));
+
   // want the head?
-  if (oid.snap == CEPH_NOSNAP) {
+  if (oid.snap == CEPH_NOSNAP)
+  {
     ObjectContextRef obc = get_object_context(oid, can_create);
-    if (!obc) {
+    if (!obc)
+    {
       if (pmissing)
         *pmissing = oid;
       return -ENOENT;
     }
+
     dout(10) << "find_object_context " << oid
-       << " @" << oid.snap
-       << " oi=" << obc->obs.oi
-       << dendl;
+             << " @" << oid.snap
+             << " oi=" << obc->obs.oi
+             << dendl;
     *pobc = obc;
 
     return 0;
