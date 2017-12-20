@@ -1,0 +1,142 @@
+[global]
+    cluster                     = DUMB_CLUSTER_NAME
+    fsid                        = 116d4de8-fd14-491f-811f-c1bdd8fac141
+  
+    public network              = 192.168.100.0/24
+    cluster network             = 192.168.122.0/24
+  
+    auth cluster required       = cephx
+    auth service required       = cephx
+    auth client required        = cephx
+  
+    osd pool default size       = 3
+    osd pool default min size   = 2
+  
+    osd pool default pg num     = 128
+    osd pool default pgp num    = 128
+  
+    osd pool default crush rule = 0
+    osd crush chooseleaf type   = 1
+  
+    admin socket                = /var/run/ceph/$cluster-$name.asock
+    pid file                    = /var/run/ceph/$cluster-$name.pid
+    log file                    = /var/log/ceph/$cluster-$name.log
+    log to syslog               = false
+  
+    max open files              = 131072
+    ms bind ipv6                = false
+  
+[mon]
+    mon initial members = node1,node2,node3
+    mon host = 192.168.100.141:6789,192.168.100.142:6789,192.168.100.143:6789
+  
+    ;Yuanguo: the default value of {mon data} is /var/lib/ceph/mon/$cluster-$id,
+    ;         we overwrite it.
+    mon data                     = /var/lib/ceph/mon/$cluster-$name
+    mon clock drift allowed      = 10
+    mon clock drift warn backoff = 30
+  
+    mon osd full ratio           = .95
+    mon osd nearfull ratio       = .85
+  
+    mon osd down out interval    = 600
+    mon osd report timeout       = 300
+  
+    mon allow pool delete        = true  ; without this, you cannot delete pool
+    ;debug ms                     = 20
+    ;debug mon                    = 20
+    ;debug paxos                  = 20
+    ;debug auth                   = 20
+
+[mon.node1]  
+    host                         = node1
+    mon addr                     = 192.168.100.141:6789
+[mon.node2]  
+    host                         = node2
+    mon addr                     = 192.168.100.142:6789
+[mon.node3]  
+    host                         = node3
+    mon addr                     = 192.168.100.143:6789
+
+  
+
+[mgr]  
+    ;Yuanguo: the default value of {mgr data} is /var/lib/ceph/mgr/$cluster-$id,  
+    ;         we overwrite it.  
+    mgr data                     = /var/lib/ceph/mgr/$cluster-$name  
+  
+
+
+[osd]  
+    ;Yuanguo: we wish to overwrite {osd data}, but it seems that 'ceph-disk' forces  
+    ;     to use the default value, so keep the default now; maybe in later versions  
+    ;     of ceph the limitation will be eliminated.  
+    osd data                     = /var/lib/ceph/osd/$cluster-$id  
+    osd recovery max active      = 3  
+    osd max backfills            = 5  
+    osd max scrubs               = 2  
+  
+    osd mkfs type = xfs  
+    osd mkfs options xfs = -f -i size=1024  
+    osd mount options xfs = rw,noatime,nobarrier,inode64,logbsize=256k,delaylog  
+  
+    filestore max sync interval  = 5  
+    osd op threads               = 2  
+  
+    ;debug ms                     = 100  
+    debug osd                    = 100
+    debug optracker              = 100
+
+
+[osd.0]
+    host = node0
+    devs = /dev/vdb
+[osd.1]
+    host = node0
+    devs = /dev/vdc
+[osd.2]
+    host = node0
+    devs = /dev/vdd
+[osd.3]
+    host = node0
+    devs = /dev/vde
+
+
+[osd.4]
+    host = node1
+    devs = /dev/vdb
+[osd.5]
+    host = node1
+    devs = /dev/vdc
+[osd.6]
+    host = node1
+    devs = /dev/vdd
+[osd.7]
+    host = node1
+    devs = /dev/vde
+
+[osd.8]
+    host = node2
+    devs = /dev/vdb
+[osd.9]
+    host = node2
+    devs = /dev/vdc
+[osd.10]
+    host = node2
+    devs = /dev/vdd
+[osd.11]
+    host = node2
+    devs = /dev/vde
+
+[osd.12]
+    host = node3
+    devs = /dev/vdb
+[osd.13]
+    host = node3
+    devs = /dev/vdc
+[osd.14]
+    host = node3
+    devs = /dev/vdd
+[osd.15]
+    host = node3
+    devs = /dev/vde
