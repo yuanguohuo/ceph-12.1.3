@@ -743,74 +743,78 @@ bool ECBackend::can_handle_while_inactive(
   return false;
 }
 
-bool ECBackend::_handle_message(
-  OpRequestRef _op)
+bool ECBackend::_handle_message(OpRequestRef _op)
 {
   dout(10) << __func__ << ": " << *_op->get_req() << dendl;
   int priority = _op->get_req()->get_priority();
-  switch (_op->get_req()->get_type()) {
-  case MSG_OSD_EC_WRITE: {
-    // NOTE: this is non-const because handle_sub_write modifies the embedded
-    // ObjectStore::Transaction in place (and then std::move's it).  It does
-    // not conflict with ECSubWrite's operator<<.
-    MOSDECSubOpWrite *op = static_cast<MOSDECSubOpWrite*>(
-      _op->get_nonconst_req());
-    handle_sub_write(op->op.from, _op, op->op, _op->pg_trace);
-    return true;
-  }
-  case MSG_OSD_EC_WRITE_REPLY: {
-    const MOSDECSubOpWriteReply *op = static_cast<const MOSDECSubOpWriteReply*>(
-      _op->get_req());
-    handle_sub_write_reply(op->op.from, op->op, _op->pg_trace);
-    return true;
-  }
-  case MSG_OSD_EC_READ: {
-    const MOSDECSubOpRead *op = static_cast<const MOSDECSubOpRead*>(_op->get_req());
-    MOSDECSubOpReadReply *reply = new MOSDECSubOpReadReply;
-    reply->pgid = get_parent()->primary_spg_t();
-    reply->map_epoch = get_parent()->get_epoch();
-    reply->min_epoch = get_parent()->get_interval_start_epoch();
-    handle_sub_read(op->op.from, op->op, &(reply->op), _op->pg_trace);
-    reply->trace = _op->pg_trace;
-    get_parent()->send_message_osd_cluster(
-      op->op.from.osd, reply, get_parent()->get_epoch());
-    return true;
-  }
-  case MSG_OSD_EC_READ_REPLY: {
-    // NOTE: this is non-const because handle_sub_read_reply steals resulting
-    // buffers.  It does not conflict with ECSubReadReply operator<<.
-    MOSDECSubOpReadReply *op = static_cast<MOSDECSubOpReadReply*>(
-      _op->get_nonconst_req());
-    RecoveryMessages rm;
-    handle_sub_read_reply(op->op.from, op->op, &rm, _op->pg_trace);
-    dispatch_recovery_messages(rm, priority);
-    return true;
-  }
-  case MSG_OSD_PG_PUSH: {
-    const MOSDPGPush *op = static_cast<const MOSDPGPush *>(_op->get_req());
-    RecoveryMessages rm;
-    for (vector<PushOp>::const_iterator i = op->pushes.begin();
-	 i != op->pushes.end();
-	 ++i) {
-      handle_recovery_push(*i, &rm);
+  switch (_op->get_req()->get_type())
+  {
+    case MSG_OSD_EC_WRITE:
+    {
+      // NOTE: this is non-const because handle_sub_write modifies the embedded
+      // ObjectStore::Transaction in place (and then std::move's it).  It does
+      // not conflict with ECSubWrite's operator<<.
+      MOSDECSubOpWrite *op = static_cast<MOSDECSubOpWrite*>(
+          _op->get_nonconst_req());
+      handle_sub_write(op->op.from, _op, op->op, _op->pg_trace);
+      return true;
     }
-    dispatch_recovery_messages(rm, priority);
-    return true;
-  }
-  case MSG_OSD_PG_PUSH_REPLY: {
-    const MOSDPGPushReply *op = static_cast<const MOSDPGPushReply *>(
-      _op->get_req());
-    RecoveryMessages rm;
-    for (vector<PushReplyOp>::const_iterator i = op->replies.begin();
-	 i != op->replies.end();
-	 ++i) {
-      handle_recovery_push_reply(*i, op->from, &rm);
+    case MSG_OSD_EC_WRITE_REPLY:
+    {
+      const MOSDECSubOpWriteReply *op = static_cast<const MOSDECSubOpWriteReply*>(
+          _op->get_req());
+      handle_sub_write_reply(op->op.from, op->op, _op->pg_trace);
+      return true;
     }
-    dispatch_recovery_messages(rm, priority);
-    return true;
-  }
-  default:
-    return false;
+    case MSG_OSD_EC_READ:
+    {
+      const MOSDECSubOpRead *op = static_cast<const MOSDECSubOpRead*>(_op->get_req());
+      MOSDECSubOpReadReply *reply = new MOSDECSubOpReadReply;
+      reply->pgid = get_parent()->primary_spg_t();
+      reply->map_epoch = get_parent()->get_epoch();
+      reply->min_epoch = get_parent()->get_interval_start_epoch();
+      handle_sub_read(op->op.from, op->op, &(reply->op), _op->pg_trace);
+      reply->trace = _op->pg_trace;
+      get_parent()->send_message_osd_cluster(
+          op->op.from.osd, reply, get_parent()->get_epoch());
+      return true;
+    }
+    case MSG_OSD_EC_READ_REPLY:
+    {
+      // NOTE: this is non-const because handle_sub_read_reply steals resulting
+      // buffers.  It does not conflict with ECSubReadReply operator<<.
+      MOSDECSubOpReadReply *op = static_cast<MOSDECSubOpReadReply*>(
+          _op->get_nonconst_req());
+      RecoveryMessages rm;
+      handle_sub_read_reply(op->op.from, op->op, &rm, _op->pg_trace);
+      dispatch_recovery_messages(rm, priority);
+      return true;
+    }
+    case MSG_OSD_PG_PUSH:
+    {
+      const MOSDPGPush *op = static_cast<const MOSDPGPush *>(_op->get_req());
+      RecoveryMessages rm;
+      for (vector<PushOp>::const_iterator i = op->pushes.begin(); i != op->pushes.end(); ++i)
+      {
+        handle_recovery_push(*i, &rm);
+      }
+      dispatch_recovery_messages(rm, priority);
+      return true;
+    }
+    case MSG_OSD_PG_PUSH_REPLY:
+    {
+      const MOSDPGPushReply *op = static_cast<const MOSDPGPushReply *>(
+          _op->get_req());
+      RecoveryMessages rm;
+      for (vector<PushReplyOp>::const_iterator i = op->replies.begin(); i != op->replies.end(); ++i)
+      {
+        handle_recovery_push_reply(*i, op->from, &rm);
+      }
+      dispatch_recovery_messages(rm, priority);
+      return true;
+    }
+    default:
+      return false;
   }
   return false;
 }
