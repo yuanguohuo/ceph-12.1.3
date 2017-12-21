@@ -2381,6 +2381,10 @@ void PrimaryLogPG::do_op(OpRequestRef& op)
     close_op_ctx(ctx);
     return;
   }
+  else  //Yuanguo: else branch is added by Yuanguo.
+  {
+    dout(20) << __func__ << " got rw locks of object " << m->get_oid() << " lock_type=" << ctx->lock_type << " r=" << r << dendl;
+  }
 
   dout(20) << __func__ << " obc " << *obc << dendl;
 

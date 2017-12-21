@@ -755,39 +755,52 @@ protected:
    * @param ctx [in,out] ctx to get locks for
    * @return true on success, false if we are queued
    */
-  bool get_rw_locks(bool write_ordered, OpContext *ctx) {
+  bool get_rw_locks(bool write_ordered, OpContext *ctx)
+  {
     /* If snapset_obc, !obc->obs->exists and we will always take the
      * snapdir lock *before* the head lock.  Since all callers will do
      * this (read or write) if we get the first we will be guaranteed
      * to get the second.
      */
-    if (write_ordered && ctx->op->may_read()) {
+    if (write_ordered && ctx->op->may_read())
+    {
       ctx->lock_type = ObjectContext::RWState::RWEXCL;
-    } else if (write_ordered) {
+    }
+    else if (write_ordered)
+    {
       ctx->lock_type = ObjectContext::RWState::RWWRITE;
-    } else {
+    }
+    else
+    {
       assert(ctx->op->may_read());
       ctx->lock_type = ObjectContext::RWState::RWREAD;
     }
 
-    if (ctx->snapset_obc) {
+    if (ctx->snapset_obc)
+    {
       assert(!ctx->obc->obs.exists);
+
       if (!ctx->lock_manager.get_lock_type(
-	    ctx->lock_type,
-	    ctx->snapset_obc->obs.oi.soid,
-	    ctx->snapset_obc,
-	    ctx->op)) {
-	ctx->lock_type = ObjectContext::RWState::RWNONE;
-	return false;
+                                  ctx->lock_type,
+                                  ctx->snapset_obc->obs.oi.soid,
+                                  ctx->snapset_obc,
+                                  ctx->op))
+      {
+        ctx->lock_type = ObjectContext::RWState::RWNONE;
+        return false;
       }
     }
+
     if (ctx->lock_manager.get_lock_type(
-	  ctx->lock_type,
-	  ctx->obc->obs.oi.soid,
-	  ctx->obc,
-	  ctx->op)) {
+                               ctx->lock_type,
+                               ctx->obc->obs.oi.soid,
+                               ctx->obc,
+                               ctx->op))
+    {
       return true;
-    } else {
+    }
+    else
+    {
       assert(!ctx->snapset_obc);
       ctx->lock_type = ObjectContext::RWState::RWNONE;
       return false;
@@ -806,32 +819,40 @@ protected:
    *
    * @param manager [in] manager with locks to release
    */
-  void release_object_locks(
-    ObcLockManager &lock_manager) {
+  void release_object_locks(ObcLockManager &lock_manager)
+  {
     list<pair<hobject_t, list<OpRequestRef> > > to_req;
     bool requeue_recovery = false;
     bool requeue_snaptrim = false;
+
     lock_manager.put_locks(
-      &to_req,
-      &requeue_recovery,
-      &requeue_snaptrim);
+        &to_req,
+        &requeue_recovery,
+        &requeue_snaptrim);
+
     if (requeue_recovery)
       queue_recovery();
+
     if (requeue_snaptrim)
       snap_trimmer_machine.process_event(TrimWriteUnblocked());
 
-    if (!to_req.empty()) {
+    if (!to_req.empty())
+    {
       // requeue at front of scrub blocking queue if we are blocked by scrub
-      for (auto &&p: to_req) {
-	if (scrubber.write_blocked_by_scrub(p.first.get_head())) {
-	  waiting_for_scrub.splice(
-	    waiting_for_scrub.begin(),
-	    p.second,
-	    p.second.begin(),
-	    p.second.end());
-	} else {
-	  requeue_ops(p.second);
-	}
+      for (auto &&p: to_req)
+      {
+        if (scrubber.write_blocked_by_scrub(p.first.get_head()))
+        {
+          waiting_for_scrub.splice(
+              waiting_for_scrub.begin(),
+              p.second,
+              p.second.begin(),
+              p.second.end());
+        }
+        else
+        {
+          requeue_ops(p.second);
+        }
       }
     }
   }

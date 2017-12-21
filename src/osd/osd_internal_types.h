@@ -82,6 +82,7 @@ public:
         default: return "???";
       }
     }
+
     const char *get_state_name() const
     {
       return get_state_name(state);
@@ -465,9 +466,9 @@ inline ostream& operator<<(ostream& out, const ObjectState& obs)
 inline ostream& operator<<(ostream& out, const ObjectContext::RWState& rw)
 {
   return out << "rwstate(" << rw.get_state_name()
-	     << " n=" << rw.count
-	     << " w=" << rw.waiters.size()
-	     << ")";
+             << " n=" << rw.count
+             << " w=" << rw.waiters.size()
+             << ")";
 }
 
 inline ostream& operator<<(ostream& out, const ObjectContext& obc)
@@ -475,78 +476,98 @@ inline ostream& operator<<(ostream& out, const ObjectContext& obc)
   return out << "obc(" << obc.obs << " " << obc.rwstate << ")";
 }
 
-class ObcLockManager {
-  struct ObjectLockState {
+class ObcLockManager
+{
+  struct ObjectLockState
+  {
     ObjectContextRef obc;
     ObjectContext::RWState::State type;
-    ObjectLockState(
-      ObjectContextRef obc,
-      ObjectContext::RWState::State type)
-      : obc(obc), type(type) {}
+    ObjectLockState(ObjectContextRef obc, ObjectContext::RWState::State type)
+      : obc(obc), type(type) 
+    {}
   };
+
   map<hobject_t, ObjectLockState> locks;
+
 public:
   ObcLockManager() = default;
   ObcLockManager(ObcLockManager &&) = default;
   ObcLockManager(const ObcLockManager &) = delete;
   ObcLockManager &operator=(ObcLockManager &&) = default;
-  bool empty() const {
+
+  bool empty() const
+  {
     return locks.empty();
   }
+
   bool get_lock_type(
     ObjectContext::RWState::State type,
     const hobject_t &hoid,
     ObjectContextRef obc,
-    OpRequestRef op) {
+    OpRequestRef op)
+  {
     assert(locks.find(hoid) == locks.end());
-    if (obc->get_lock_type(op, type)) {
+
+    if (obc->get_lock_type(op, type))
+    {
       locks.insert(make_pair(hoid, ObjectLockState(obc, type)));
       return true;
-    } else {
+    }
+    else
+    {
       return false;
     }
   }
+
   /// Get write lock, ignore starvation
   bool take_write_lock(
     const hobject_t &hoid,
-    ObjectContextRef obc) {
+    ObjectContextRef obc)
+  {
     assert(locks.find(hoid) == locks.end());
-    if (obc->rwstate.take_write_lock()) {
-      locks.insert(
-	make_pair(
-	  hoid, ObjectLockState(obc, ObjectContext::RWState::RWWRITE)));
+    if (obc->rwstate.take_write_lock())
+    {
+      locks.insert(make_pair(hoid, ObjectLockState(obc, ObjectContext::RWState::RWWRITE)));
       return true;
-    } else {
+    }
+    else
+    {
       return false;
     }
   }
+
   /// Get write lock for snap trim
   bool get_snaptrimmer_write(
     const hobject_t &hoid,
     ObjectContextRef obc,
-    bool mark_if_unsuccessful) {
+    bool mark_if_unsuccessful)
+  {
     assert(locks.find(hoid) == locks.end());
-    if (obc->get_snaptrimmer_write(mark_if_unsuccessful)) {
-      locks.insert(
-	make_pair(
-	  hoid, ObjectLockState(obc, ObjectContext::RWState::RWWRITE)));
+    if (obc->get_snaptrimmer_write(mark_if_unsuccessful))
+    {
+      locks.insert(make_pair(hoid, ObjectLockState(obc, ObjectContext::RWState::RWWRITE)));
       return true;
-    } else {
+    }
+    else
+    {
       return false;
     }
   }
+
   /// Get write lock greedy
   bool get_write_greedy(
     const hobject_t &hoid,
     ObjectContextRef obc,
-    OpRequestRef op) {
+    OpRequestRef op)
+  {
     assert(locks.find(hoid) == locks.end());
-    if (obc->get_write_greedy(op)) {
-      locks.insert(
-	make_pair(
-	  hoid, ObjectLockState(obc, ObjectContext::RWState::RWWRITE)));
+    if (obc->get_write_greedy(op))
+    {
+      locks.insert(make_pair(hoid, ObjectLockState(obc, ObjectContext::RWState::RWWRITE)));
       return true;
-    } else {
+    }
+    else
+    {
       return false;
     }
   }
@@ -554,15 +575,16 @@ public:
   /// try get read lock
   bool try_get_read_lock(
     const hobject_t &hoid,
-    ObjectContextRef obc) {
+    ObjectContextRef obc)
+  {
     assert(locks.find(hoid) == locks.end());
-    if (obc->try_get_read_lock()) {
-      locks.insert(
-	make_pair(
-	  hoid,
-	  ObjectLockState(obc, ObjectContext::RWState::RWREAD)));
+    if (obc->try_get_read_lock())
+    {
+      locks.insert(make_pair(hoid, ObjectLockState(obc, ObjectContext::RWState::RWREAD)));
       return true;
-    } else {
+    }
+    else
+    {
       return false;
     }
   }
@@ -570,24 +592,22 @@ public:
   void put_locks(
     list<pair<hobject_t, list<OpRequestRef> > > *to_requeue,
     bool *requeue_recovery,
-    bool *requeue_snaptrimmer) {
-    for (auto p: locks) {
+    bool *requeue_snaptrimmer)
+  {
+    for (auto p: locks)
+    {
       list<OpRequestRef> _to_requeue;
-      p.second.obc->put_lock_type(
-	p.second.type,
-	&_to_requeue,
-	requeue_recovery,
-	requeue_snaptrimmer);
-      if (to_requeue) {
-	to_requeue->push_back(
-	  make_pair(
-	    p.second.obc->obs.oi.soid,
-	    std::move(_to_requeue)));
+      p.second.obc->put_lock_type(p.second.type, &_to_requeue, requeue_recovery, requeue_snaptrimmer);
+      if (to_requeue)
+      {
+        to_requeue->push_back(make_pair(p.second.obc->obs.oi.soid, std::move(_to_requeue)));
       }
     }
     locks.clear();
   }
-  ~ObcLockManager() {
+
+  ~ObcLockManager()
+  {
     assert(locks.empty());
   }
 };
