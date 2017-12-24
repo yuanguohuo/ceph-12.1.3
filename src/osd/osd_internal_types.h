@@ -478,6 +478,11 @@ inline ostream& operator<<(ostream& out, const ObjectContext& obc)
 
 class ObcLockManager
 {
+//Yuanguo: added by yuanguo, for log
+#include "global/global_context.h"
+#define dout_context g_ceph_context
+#define dout_subsys ceph_subsys_osd
+
   struct ObjectLockState
   {
     ObjectContextRef obc;
@@ -511,10 +516,12 @@ public:
     if (obc->get_lock_type(op, type))
     {
       locks.insert(make_pair(hoid, ObjectLockState(obc, type)));
+      dout(30) << "succeeded to get rw locks on: " << hoid << " lock-type: " << ObjectContext::RWState::get_state_name(type) << dendl;
       return true;
     }
     else
     {
+      dout(30) << "failed to get rw locks on: " << hoid << " lock-type: " << ObjectContext::RWState::get_state_name(type) << dendl;
       return false;
     }
   }
@@ -528,10 +535,12 @@ public:
     if (obc->rwstate.take_write_lock())
     {
       locks.insert(make_pair(hoid, ObjectLockState(obc, ObjectContext::RWState::RWWRITE)));
+      dout(30) << "succeeded to take write lock on: " << hoid << dendl;
       return true;
     }
     else
     {
+      dout(30) << "failed to take write lock on: " << hoid << dendl;
       return false;
     }
   }
@@ -546,10 +555,12 @@ public:
     if (obc->get_snaptrimmer_write(mark_if_unsuccessful))
     {
       locks.insert(make_pair(hoid, ObjectLockState(obc, ObjectContext::RWState::RWWRITE)));
+      dout(30) << "succeeded to get snaptrimmer write lock on: " << hoid << dendl;
       return true;
     }
     else
     {
+      dout(30) << "failed to get snaptrimmer write lock on: " << hoid << dendl;
       return false;
     }
   }
@@ -564,10 +575,12 @@ public:
     if (obc->get_write_greedy(op))
     {
       locks.insert(make_pair(hoid, ObjectLockState(obc, ObjectContext::RWState::RWWRITE)));
+      dout(30) << "succeeded to get greedy write lock on: " << hoid << dendl;
       return true;
     }
     else
     {
+      dout(30) << "failed to get greedy write lock on: " << hoid << dendl;
       return false;
     }
   }
@@ -581,10 +594,12 @@ public:
     if (obc->try_get_read_lock())
     {
       locks.insert(make_pair(hoid, ObjectLockState(obc, ObjectContext::RWState::RWREAD)));
+      dout(30) << "succeeded to get read lock on: " << hoid << dendl;
       return true;
     }
     else
     {
+      dout(30) << "failed to get read lock on: " << hoid << dendl;
       return false;
     }
   }
@@ -597,6 +612,7 @@ public:
     for (auto p: locks)
     {
       list<OpRequestRef> _to_requeue;
+      dout(30) << "put rw locks on: " << p.first << " lock-type: " << ObjectContext::RWState::get_state_name(p.second.type) << dendl;
       p.second.obc->put_lock_type(p.second.type, &_to_requeue, requeue_recovery, requeue_snaptrimmer);
       if (to_requeue)
       {
@@ -610,6 +626,9 @@ public:
   {
     assert(locks.empty());
   }
+//Yuanguo: added by yuanguo, for log
+#undef dout_context
+#undef dout_subsys
 };
 
 
