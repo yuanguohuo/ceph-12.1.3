@@ -4472,7 +4472,8 @@ inline ostream& operator<<(ostream& out, const OSDSuperblock& sb)
  * attached to object head.  describes most recent snap context, and
  * set of existing clones.
  */
-struct SnapSet {
+struct SnapSet
+{
   snapid_t seq;
   bool head_exists;
   vector<snapid_t> snaps;    // descending
@@ -4482,12 +4483,14 @@ struct SnapSet {
   map<snapid_t, vector<snapid_t>> clone_snaps; // descending
 
   SnapSet() : seq(0), head_exists(false) {}
-  explicit SnapSet(bufferlist& bl) {
+  explicit SnapSet(bufferlist& bl)
+  {
     bufferlist::iterator p = bl.begin();
     decode(p);
   }
 
-  bool is_legacy() const {
+  bool is_legacy() const
+  {
     return clone_snaps.size() < clones.size() || !head_exists;
   }
 
@@ -4502,25 +4505,25 @@ struct SnapSet {
   void dump(Formatter *f) const;
   static void generate_test_instances(list<SnapSet*>& o);  
 
-  SnapContext get_ssc_as_of(snapid_t as_of) const {
+  SnapContext get_ssc_as_of(snapid_t as_of) const
+  {
     SnapContext out;
     out.seq = as_of;
-    for (vector<snapid_t>::const_iterator i = snaps.begin();
-	 i != snaps.end();
-	 ++i) {
+    for (vector<snapid_t>::const_iterator i = snaps.begin(); i != snaps.end(); ++i)
+    {
       if (*i <= as_of)
-	out.snaps.push_back(*i);
+        out.snaps.push_back(*i);
     }
     return out;
   }
 
   // return min element of snaps > after, return max if no such element
-  snapid_t get_first_snap_after(snapid_t after, snapid_t max) const {
-    for (vector<snapid_t>::const_reverse_iterator i = snaps.rbegin();
-	 i != snaps.rend();
-	 ++i) {
+  snapid_t get_first_snap_after(snapid_t after, snapid_t max) const
+  {
+    for (vector<snapid_t>::const_reverse_iterator i = snaps.rbegin(); i != snaps.rend(); ++i)
+    {
       if (*i > after)
-	return *i;
+        return *i;
     }
     return max;
   }
@@ -4528,6 +4531,7 @@ struct SnapSet {
   SnapSet get_filtered(const pg_pool_t &pinfo) const;
   void filter(const pg_pool_t &pinfo);
 };
+
 WRITE_CLASS_ENCODER(SnapSet)
 
 ostream& operator<<(ostream& out, const SnapSet& cs);

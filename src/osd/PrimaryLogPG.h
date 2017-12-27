@@ -483,7 +483,8 @@ public:
   /*
    * Capture all object state associated with an in-progress read or write.
    */
-  struct OpContext {
+  struct OpContext
+  {
     OpRequestRef op;
     osd_reqid_t reqid;
     vector<OSDOp> *ops;
@@ -508,16 +509,21 @@ public:
     list<pair<watch_info_t,bool> > watch_connects; ///< new watch + will_ping flag
     list<watch_disconnect_t> watch_disconnects; ///< old watch + send_discon
     list<notify_info_t> notifies;
-    struct NotifyAck {
+
+    struct NotifyAck
+    {
       boost::optional<uint64_t> watch_cookie;
       uint64_t notify_id;
       bufferlist reply_bl;
+
       explicit NotifyAck(uint64_t notify_id) : notify_id(notify_id) {}
       NotifyAck(uint64_t notify_id, uint64_t cookie, bufferlist& rbl)
-	: watch_cookie(cookie), notify_id(notify_id) {
-	reply_bl.claim(rbl);
+        : watch_cookie(cookie), notify_id(notify_id)
+      {
+        reply_bl.claim(rbl);
       }
     };
+
     list<NotifyAck> notify_acks;
 
     uint64_t bytes_written, bytes_read;
@@ -556,20 +562,28 @@ public:
     list<std::function<void()>> on_committed;
     list<std::function<void()>> on_finish;
     list<std::function<void()>> on_success;
+
     template <typename F>
-    void register_on_finish(F &&f) {
+    void register_on_finish(F &&f)
+    {
       on_finish.emplace_back(std::forward<F>(f));
     }
+
     template <typename F>
-    void register_on_success(F &&f) {
+    void register_on_success(F &&f)
+    {
       on_success.emplace_back(std::forward<F>(f));
     }
+
     template <typename F>
-    void register_on_applied(F &&f) {
+    void register_on_applied(F &&f)
+    {
       on_applied.emplace_back(std::forward<F>(f));
     }
+
     template <typename F>
-    void register_on_commit(F &&f) {
+    void register_on_commit(F &&f)
+    {
       on_committed.emplace_back(std::forward<F>(f));
     }
 
@@ -577,12 +591,15 @@ public:
 
     // pending async reads <off, len, op_flags> -> <outbl, outr>
     list<pair<boost::tuple<uint64_t, uint64_t, unsigned>,
-	      pair<bufferlist*, Context*> > > pending_async_reads;
+         pair<bufferlist*, Context*> > > pending_async_reads;
     int inflightreads;
+
     friend struct OnReadComplete;
+
     void start_async_reads(PrimaryLogPG *pg);
     void finish_read(PrimaryLogPG *pg);
-    bool async_reads_complete() {
+    bool async_reads_complete()
+    {
       return inflightreads == 0;
     }
 
@@ -594,9 +611,7 @@ public:
     OpContext(const OpContext& other);
     const OpContext& operator=(const OpContext& other);
 
-    OpContext(OpRequestRef _op, osd_reqid_t _reqid, vector<OSDOp>* _ops,
-	      ObjectContextRef& obc,
-	      PrimaryLogPG *_pg) :
+    OpContext(OpRequestRef _op, osd_reqid_t _reqid, vector<OSDOp>* _ops, ObjectContextRef& obc, PrimaryLogPG *_pg) :
       op(_op), reqid(_reqid), ops(_ops),
       obs(&obc->obs),
       snapset(0),
@@ -611,14 +626,16 @@ public:
       num_write(0),
       sent_reply(false),
       inflightreads(0),
-      lock_type(ObjectContext::RWState::RWNONE) {
-      if (obc->ssc) {
-	new_snapset = obc->ssc->snapset;
-	snapset = &obc->ssc->snapset;
+      lock_type(ObjectContext::RWState::RWNONE)
+    {
+      if (obc->ssc)
+      {
+        new_snapset = obc->ssc->snapset;
+        snapset = &obc->ssc->snapset;
       }
     }
-    OpContext(OpRequestRef _op, osd_reqid_t _reqid,
-              vector<OSDOp>* _ops, PrimaryLogPG *_pg) :
+
+    OpContext(OpRequestRef _op, osd_reqid_t _reqid, vector<OSDOp>* _ops, PrimaryLogPG *_pg) :
       op(_op), reqid(_reqid), ops(_ops), obs(NULL), snapset(0),
       modify(false), user_modify(false), undirty(false), cache_evict(false),
       ignore_cache(false), ignore_log_op_stats(false), update_log_only(false),
@@ -628,33 +645,45 @@ public:
       num_read(0),
       num_write(0),
       inflightreads(0),
-      lock_type(ObjectContext::RWState::RWNONE) {}
-    void reset_obs(ObjectContextRef obc) {
+      lock_type(ObjectContext::RWState::RWNONE)
+    {
+    }
+
+    void reset_obs(ObjectContextRef obc)
+    {
       new_obs = ObjectState(obc->obs.oi, obc->obs.exists);
-      if (obc->ssc) {
-	new_snapset = obc->ssc->snapset;
-	snapset = &obc->ssc->snapset;
+      if (obc->ssc)
+      {
+        new_snapset = obc->ssc->snapset;
+        snapset = &obc->ssc->snapset;
       }
     }
-    ~OpContext() {
+
+    ~OpContext()
+    {
       assert(!op_t);
+
       if (reply)
-	reply->put();
-      for (list<pair<boost::tuple<uint64_t, uint64_t, unsigned>,
-		     pair<bufferlist*, Context*> > >::iterator i =
-	     pending_async_reads.begin();
-	   i != pending_async_reads.end();
-	   pending_async_reads.erase(i++)) {
-	delete i->second.second;
+        reply->put();
+
+      for (list<pair<boost::tuple<uint64_t, uint64_t, unsigned>, pair<bufferlist*, Context*> > >::iterator i = pending_async_reads.begin();
+          i != pending_async_reads.end();
+          pending_async_reads.erase(i++))
+      {
+        delete i->second.second;
       }
     }
-    uint64_t get_features() {
-      if (op && op->get_req()) {
+
+    uint64_t get_features()
+    {
+      if (op && op->get_req())
+      {
         return op->get_req()->get_connection()->get_features();
       }
       return -1ull;
     }
   };
+
   using OpContextUPtr = std::unique_ptr<OpContext>;
   friend struct OpContext;
 
