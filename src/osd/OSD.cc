@@ -10227,16 +10227,18 @@ void OSD::ShardedOpWQ::_process(uint32_t thread_index, heartbeat_handle_d *hb)
   }
 
   //Yuanguo: 
+  //    step-0. lock sdata->sdata_op_ordering_lock, see above;
   //    step-1. dequeue an item from sdata->pqueue;
   //    step-2. push it into sdata->pg_slots;
   //    step-3. unlock sdata->sdata_op_ordering_lock;
   //    step-4. acquire pg lock;
   //    step-5. lock sdata->sdata_op_ordering_lock;
   //    step-6. pop an item from sdata->pg_slots and process it;
-  //    step-7. releas pg lock acquired in step-4;
+  //    step-7. unlock sdata->sdata_op_ordering_lock;
+  //    step-8. releas pg lock acquired in step-4;
   //
   //Also, notice that:
-  // a. in step-6, sdata->pg_slots might be empty, because raced with wake_pg_waiters or prune_pg_waiters;
+  // a. in step-6, sdata->pg_slots might be empty, because we raced with wake_pg_waiters or prune_pg_waiters;
   // b. the item popped and processed in step-6 might NOT be the same one as that dequeued and pushed in step-1 and 
   //    step-2. Because, in step-4, the item might be swapped, see OSD::ShardedOpWQ::_enqueue_front()
 
@@ -10420,6 +10422,7 @@ void OSD::ShardedOpWQ::_process(uint32_t thread_index, heartbeat_handle_d *hb)
     return;
   }
 
+  //step-7. unlock sdata->sdata_op_ordering_lock;
   sdata->sdata_op_ordering_lock.Unlock();
 
   // osd_opwq_process marks the point at which an operation has been dequeued
@@ -10458,7 +10461,7 @@ void OSD::ShardedOpWQ::_process(uint32_t thread_index, heartbeat_handle_d *hb)
         reqid.name._num, reqid.tid, reqid.inc);
   }
 
-  //Yuanguo: step-7. releas pg lock acquired in step-4;
+  //Yuanguo: step-8. releas pg lock acquired in step-4;
   pg->unlock();
 }
 
