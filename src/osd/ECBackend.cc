@@ -925,31 +925,41 @@ void ECBackend::handle_sub_write(
   const ZTracer::Trace &trace,
   Context *on_local_applied_sync)
 {
+  dout(10) << __func__ << " Yuanguo: from=" << from << dendl;
+
   if (msg)
     msg->mark_started();
+
   trace.event("handle_sub_write");
   assert(!get_parent()->get_log().get_missing().is_missing(op.soid));
+
   if (!get_parent()->pgb_is_primary())
     get_parent()->update_stats(op.stats);
+
   ObjectStore::Transaction localt;
-  if (!op.temp_added.empty()) {
+  if (!op.temp_added.empty())
+  {
     add_temp_objs(op.temp_added);
   }
-  if (op.backfill) {
-    for (set<hobject_t>::iterator i = op.temp_removed.begin();
-	 i != op.temp_removed.end();
-	 ++i) {
+
+  if (op.backfill)
+  {
+    for (set<hobject_t>::iterator i = op.temp_removed.begin(); i != op.temp_removed.end(); ++i)
+    {
       dout(10) << __func__ << ": removing object " << *i
-	       << " since we won't get the transaction" << dendl;
+	             << " since we won't get the transaction" << dendl;
+
       localt.remove(
-	coll,
-	ghobject_t(
-	  *i,
-	  ghobject_t::NO_GEN,
-	  get_parent()->whoami_shard().shard));
+          coll,
+          ghobject_t(
+            *i,
+            ghobject_t::NO_GEN,
+            get_parent()->whoami_shard().shard));
     }
   }
+
   clear_temp_objs(op.temp_removed);
+
   get_parent()->log_operation(
     op.log_entries,
     op.updated_hit_set_history,
@@ -959,23 +969,28 @@ void ECBackend::handle_sub_write(
     localt);
 
   PrimaryLogPG *_rPG = dynamic_cast<PrimaryLogPG *>(get_parent());
+
   if (_rPG && !_rPG->is_undersized() &&
       (unsigned)get_parent()->whoami_shard().shard >= ec_impl->get_data_chunk_count())
     op.t.set_fadvise_flag(CEPH_OSD_OP_FLAG_FADVISE_DONTNEED);
 
-  if (on_local_applied_sync) {
+  if (on_local_applied_sync)
+  {
     dout(10) << "Queueing onreadable_sync: " << on_local_applied_sync << dendl;
     localt.register_on_applied_sync(on_local_applied_sync);
   }
+
   localt.register_on_commit(
-    get_parent()->bless_context(
-      new SubWriteCommitted(
-	this, msg, op.tid,
-	op.at_version,
-	get_parent()->get_info().last_complete, trace)));
+      get_parent()->bless_context(
+        new SubWriteCommitted(
+          this, msg, op.tid,
+          op.at_version,
+          get_parent()->get_info().last_complete, trace)));
+
   localt.register_on_applied(
-    get_parent()->bless_context(
-      new SubWriteApplied(this, msg, op.tid, op.at_version, trace)));
+      get_parent()->bless_context(
+        new SubWriteApplied(this, msg, op.tid, op.at_version, trace)));
+
   vector<ObjectStore::Transaction> tls;
   tls.reserve(2);
   tls.push_back(std::move(op.t));
