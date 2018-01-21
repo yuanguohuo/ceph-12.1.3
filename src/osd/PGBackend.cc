@@ -98,6 +98,8 @@ void PGBackend::send_recovery_deletes(int prio,
 
 bool PGBackend::handle_message(OpRequestRef op)
 {
+  dout(20) << __func__ << "Yuanguo: " << op << dendl;
+
   switch (op->get_req()->get_type()) {
   case MSG_OSD_PG_RECOVERY_DELETE:
     handle_recovery_delete(op);

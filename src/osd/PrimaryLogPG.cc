@@ -1749,7 +1749,12 @@ void PrimaryLogPG::do_request(
   assert(is_peered() && flushes_in_progress == 0);
 
   if (pgbackend->handle_message(op))
+  {
+    dout(20) << " Yuanguo: handled by function handle_message(). op=" << op << dendl;
     return;
+  }
+
+  dout(20) << " Yuanguo: op=" << op << dendl;
 
   switch (op->get_req()->get_type())
   {
