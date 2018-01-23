@@ -35,23 +35,28 @@
  * 3) clone_range sources must not be modified by the same
  *    transaction
  */
-class PGTransaction {
+class PGTransaction
+{
 public:
   map<hobject_t, ObjectContextRef> obc_map;
 
-  class ObjectOperation {
+  class ObjectOperation
+  {
   public:
     struct Init
     {
       struct None {};
       struct Create {};
-      struct Clone {
-	hobject_t source;
+      struct Clone
+      {
+        hobject_t source;
       };
-      struct Rename {
-	hobject_t source; // must be temp object
+      struct Rename
+      {
+        hobject_t source; // must be temp object
       };
     };
+
     using InitType = boost::variant<
       Init::None,
       Init::Create,
@@ -84,36 +89,43 @@ public:
      * ECBackend transaction planning needs this context
      * to figure out how to perform the transaction.
      */
-    bool deletes_first() const {
+    bool deletes_first() const
+    {
       return delete_first;
     }
-    bool is_delete() const {
+    bool is_delete() const
+    {
       return boost::get<Init::None>(&init_type) != nullptr && delete_first;
     }
-    bool is_none() const {
+    bool is_none() const
+    {
       return boost::get<Init::None>(&init_type) != nullptr && !delete_first;
     }
-    bool is_fresh_object() const {
+    bool is_fresh_object() const
+    {
       return boost::get<Init::None>(&init_type) == nullptr;
     }
-    bool is_rename() const {
+    bool is_rename() const
+    {
       return boost::get<Init::Rename>(&init_type) != nullptr;
     }
-    bool has_source(hobject_t *source = nullptr) const {
+    bool has_source(hobject_t *source = nullptr) const
+    {
       return match(
-	init_type,
-	[&](const Init::Clone &op) -> bool {
-	  if (source)
-	    *source = op.source;
-	  return true;
-	},
-	[&](const Init::Rename &op) -> bool {
-	  if (source)
-	    *source = op.source;
-	  return true;
-	},
-	[&](const Init::None &) -> bool { return false; },
-	[&](const Init::Create &) -> bool { return false; });
+          init_type,
+          [&](const Init::Clone &op) -> bool {
+            if (source)
+              *source = op.source;
+            return true;
+          },
+          [&](const Init::Rename &op) -> bool {
+            if (source)
+              *source = op.source;
+            return true;
+          },
+          [&](const Init::None &) -> bool { return false; },
+          [&](const Init::Create &) -> bool { return false; }
+      );
     }
 
     bool clear_omap = false;
@@ -139,25 +151,30 @@ public:
     /// (old, new) -- only valid with no truncate or buffer updates
     boost::optional<pair<set<snapid_t>, set<snapid_t> > > updated_snaps;
 
-    struct alloc_hint_t {
+    struct alloc_hint_t
+    {
       uint64_t expected_object_size;
       uint64_t expected_write_size;
       uint32_t flags;
     };
     boost::optional<alloc_hint_t> alloc_hint;
 
-    struct BufferUpdate {
-      struct Write {
-	bufferlist buffer;
-	uint32_t fadvise_flags;
+    struct BufferUpdate
+    {
+      struct Write
+      {
+        bufferlist buffer;
+        uint32_t fadvise_flags;
       };
-      struct Zero {
-	uint64_t len;
+      struct Zero
+      {
+        uint64_t len;
       };
-      struct CloneRange {
-	hobject_t from;
-	uint64_t offset;
-	uint64_t len;
+      struct CloneRange
+      {
+        hobject_t from;
+        uint64_t offset;
+        uint64_t len;
       };
     };
     using BufferUpdateType = boost::variant<
@@ -166,106 +183,115 @@ public:
       BufferUpdate::CloneRange>;
 
   private:
-    struct SplitMerger {
+    struct SplitMerger
+    {
       BufferUpdateType split(
-	uint64_t offset,
-	uint64_t len,
-	const BufferUpdateType &bu) const {
-	return match(
-	  bu,
-	  [&](const BufferUpdate::Write &w) -> BufferUpdateType {
-	    bufferlist bl;
-	    bl.substr_of(w.buffer, offset, len);
-	    return BufferUpdate::Write{bl, w.fadvise_flags};
-	  },
-	  [&](const BufferUpdate::Zero &) -> BufferUpdateType {
-	    return BufferUpdate::Zero{len};
-	  },
-	  [&](const BufferUpdate::CloneRange &c) -> BufferUpdateType {
-	    return BufferUpdate::CloneRange{c.from, c.offset + offset, len};
-	  });
+          uint64_t offset,
+          uint64_t len,
+          const BufferUpdateType &bu) const
+      {
+        return match(
+            bu,
+            [&](const BufferUpdate::Write &w) -> BufferUpdateType {
+              bufferlist bl;
+              bl.substr_of(w.buffer, offset, len);
+              return BufferUpdate::Write{bl, w.fadvise_flags};
+            },
+            [&](const BufferUpdate::Zero &) -> BufferUpdateType {
+              return BufferUpdate::Zero{len};
+            },
+            [&](const BufferUpdate::CloneRange &c) -> BufferUpdateType {
+              return BufferUpdate::CloneRange{c.from, c.offset + offset, len};
+            }
+        );
       }
-      uint64_t length(
-	const BufferUpdateType &left) const {
-	return match(
-	  left,
-	  [&](const BufferUpdate::Write &w) -> uint64_t {
-	    return w.buffer.length();
-	  },
-	  [&](const BufferUpdate::Zero &z) -> uint64_t {
-	    return z.len;
-	  },
-	  [&](const BufferUpdate::CloneRange &c) -> uint64_t {
-	    return c.len;
-	  });
+
+      uint64_t length(const BufferUpdateType &left) const
+      {
+        return match(
+            left,
+            [&](const BufferUpdate::Write &w) -> uint64_t {
+              return w.buffer.length();
+            },
+            [&](const BufferUpdate::Zero &z) -> uint64_t {
+              return z.len;
+            },
+            [&](const BufferUpdate::CloneRange &c) -> uint64_t {
+              return c.len;
+            }
+        );
       }
-      bool can_merge(
-	const BufferUpdateType &left,
-	const BufferUpdateType &right) const {
-	return match(
-	  left,
-	  [&](const BufferUpdate::Write &w) -> bool {
-	    auto r = boost::get<BufferUpdate::Write>(&right);
-	    return r != nullptr && (w.fadvise_flags == r->fadvise_flags);
-	  },
-	  [&](const BufferUpdate::Zero &) -> bool {
-	    auto r = boost::get<BufferUpdate::Zero>(&right);
-	    return r != nullptr;
-	  },
-	  [&](const BufferUpdate::CloneRange &c) -> bool {
-	    return false;
-	  });
+
+      bool can_merge(const BufferUpdateType &left, const BufferUpdateType &right) const
+      {
+        return match(
+            left,
+            [&](const BufferUpdate::Write &w) -> bool {
+              auto r = boost::get<BufferUpdate::Write>(&right);
+              return r != nullptr && (w.fadvise_flags == r->fadvise_flags);
+            },
+            [&](const BufferUpdate::Zero &) -> bool {
+              auto r = boost::get<BufferUpdate::Zero>(&right);
+              return r != nullptr;
+            },
+            [&](const BufferUpdate::CloneRange &c) -> bool {
+              return false;
+            }
+        );
       }
-      BufferUpdateType merge(
-	BufferUpdateType &&left,
-	BufferUpdateType &&right) const {
-	return match(
-	  left,
-	  [&](const BufferUpdate::Write &w) -> BufferUpdateType {
-	    auto r = boost::get<BufferUpdate::Write>(&right);
-	    assert(r && w.fadvise_flags == r->fadvise_flags);
-	    bufferlist bl = w.buffer;
-	    bl.append(r->buffer);
-	    return BufferUpdate::Write{bl, w.fadvise_flags};
-	  },
-	  [&](const BufferUpdate::Zero &z) -> BufferUpdateType {
-	    auto r = boost::get<BufferUpdate::Zero>(&right);
-	    assert(r);
-	    return BufferUpdate::Zero{z.len + r->len};
-	  },
-	  [&](const BufferUpdate::CloneRange &c) -> BufferUpdateType {
-	    assert(0 == "violates can_merge condition");
-	    return left;
-	  });
+
+      BufferUpdateType merge(BufferUpdateType &&left, BufferUpdateType &&right) const
+      {
+        return match(
+            left,
+            [&](const BufferUpdate::Write &w) -> BufferUpdateType {
+              auto r = boost::get<BufferUpdate::Write>(&right);
+              assert(r && w.fadvise_flags == r->fadvise_flags);
+              bufferlist bl = w.buffer;
+              bl.append(r->buffer);
+              return BufferUpdate::Write{bl, w.fadvise_flags};
+            },
+            [&](const BufferUpdate::Zero &z) -> BufferUpdateType {
+              auto r = boost::get<BufferUpdate::Zero>(&right);
+              assert(r);
+              return BufferUpdate::Zero{z.len + r->len};
+            },
+            [&](const BufferUpdate::CloneRange &c) -> BufferUpdateType {
+              assert(0 == "violates can_merge condition");
+              return left;
+            }
+        );
       }
     };
   public:
-    using buffer_update_type = interval_map<
-      uint64_t, BufferUpdateType, SplitMerger>;
+    using buffer_update_type = interval_map<uint64_t, BufferUpdateType, SplitMerger>;
     buffer_update_type buffer_updates;
 
     friend class PGTransaction;
   };
+
   map<hobject_t, ObjectOperation> op_map;
 private:
-  ObjectOperation &get_object_op_for_modify(const hobject_t &hoid) {
+  ObjectOperation &get_object_op_for_modify(const hobject_t &hoid)
+  {
     auto &op = op_map[hoid];
     assert(!op.is_delete());
     return op;
   }
-  ObjectOperation &get_object_op(const hobject_t &hoid) {
+  ObjectOperation &get_object_op(const hobject_t &hoid)
+  {
     return op_map[hoid];
   }
+
 public:
-  void add_obc(
-    ObjectContextRef obc) {
+  void add_obc(ObjectContextRef obc)
+  {
     assert(obc);
     obc_map[obc->obs.oi.soid] = obc;
   }
   /// Sets up state for new object
-  void create(
-    const hobject_t &hoid
-    ) {
+  void create(const hobject_t &hoid)
+  {
     auto &op = op_map[hoid];
     assert(op.is_none() || op.is_delete());
     op.init_type = ObjectOperation::Init::Create();
@@ -275,7 +301,8 @@ public:
   void clone(
     const hobject_t &target,       ///< [in] obj to clone to
     const hobject_t &source        ///< [in] obj to clone from
-    ) {
+    )
+  {
     auto &op = op_map[target];
     assert(op.is_none() || op.is_delete());
     op.init_type = ObjectOperation::Init::Clone{source};
@@ -285,7 +312,8 @@ public:
   void rename(
     const hobject_t &target,       ///< [in] source (must be a temp object)
     const hobject_t &source        ///< [in] to, must not exist, be non-temp
-    ) {
+    )
+  {
     assert(source.is_temp());
     assert(!target.is_temp());
     auto &op = op_map[target];
@@ -293,7 +321,8 @@ public:
 
     bool del_first = op.is_delete();
     auto iter = op_map.find(source);
-    if (iter != op_map.end()) {
+    if (iter != op_map.end())
+    {
       op = iter->second;
       op_map.erase(iter);
       op.delete_first = del_first;
@@ -305,13 +334,17 @@ public:
   /// Remove -- must not be called on rename target
   void remove(
     const hobject_t &hoid          ///< [in] obj to remove
-    ) {
+    )
+  {
     auto &op = get_object_op_for_modify(hoid);
-    if (!op.is_fresh_object()) {
+    if (!op.is_fresh_object())
+    {
       assert(!op.updated_snaps);
       op = ObjectOperation();
       op.delete_first = true;
-    } else {
+    }
+    else
+    {
       assert(!op.is_rename());
       op_map.erase(hoid); // make it a noop if it's a fresh object
     }
@@ -321,7 +354,8 @@ public:
     const hobject_t &hoid,         ///< [in] object for snaps
     const set<snapid_t> &old_snaps,///< [in] old snaps value
     const set<snapid_t> &new_snaps ///< [in] new snaps value
-    ) {
+    )
+  {
     auto &op = get_object_op(hoid);
     assert(!op.updated_snaps);
     assert(op.buffer_updates.empty());
@@ -334,24 +368,30 @@ public:
   /// Clears, truncates
   void omap_clear(
     const hobject_t &hoid          ///< [in] object to clear omap
-    ) {
+    )
+  {
     auto &op = get_object_op_for_modify(hoid);
     op.clear_omap = true;
     op.omap_updates.clear();
     op.omap_header = boost::none;
   }
+
   void truncate(
     const hobject_t &hoid,         ///< [in] object
     uint64_t off                   ///< [in] offset to truncate to
-    ) {
+    )
+  {
     auto &op = get_object_op_for_modify(hoid);
     assert(!op.updated_snaps);
     op.buffer_updates.erase(
       off,
       std::numeric_limits<uint64_t>::max() - off);
-    if (!op.truncate || off < op.truncate->first) {
+    if (!op.truncate || off < op.truncate->first)
+    {
       op.truncate = std::pair<uint64_t, uint64_t>(off, off);
-    } else {
+    }
+    else
+    {
       op.truncate->second = off;
     }
   }
@@ -360,24 +400,30 @@ public:
   void setattrs(
     const hobject_t &hoid,         ///< [in] object to write
     map<string, bufferlist> &attrs ///< [in] attrs, may be cleared
-    ) {
+    )
+  {
     auto &op = get_object_op_for_modify(hoid);
-    for (auto &&i: attrs) {
+    for (auto &&i: attrs)
+    {
       op.attr_updates[i.first] = i.second;
     }
   }
+
   void setattr(
     const hobject_t &hoid,         ///< [in] object to write
     const string &attrname,        ///< [in] attr to write
     bufferlist &bl                 ///< [in] val to write, may be claimed
-    ) {
+    )
+  {
     auto &op = get_object_op_for_modify(hoid);
     op.attr_updates[attrname] = bl;
   }
+
   void rmattr(
     const hobject_t &hoid,         ///< [in] object to write
     const string &attrname         ///< [in] attr to remove
-    ) {
+    )
+  {
     auto &op = get_object_op_for_modify(hoid);
     op.attr_updates[attrname] = boost::none;
   }
@@ -388,7 +434,8 @@ public:
     uint64_t expected_object_size, ///< [in]
     uint64_t expected_write_size,
     uint32_t flags
-    ) {
+    )
+  {
     auto &op = get_object_op_for_modify(hoid);
     op.alloc_hint = ObjectOperation::alloc_hint_t{
       expected_object_size, expected_write_size, flags};
@@ -401,7 +448,8 @@ public:
     uint64_t len,                  ///< [in] len to write from bl
     bufferlist &bl,                ///< [in] bl to write will be claimed to len
     uint32_t fadvise_flags = 0     ///< [in] fadvise hint
-    ) {
+    )
+  {
     auto &op = get_object_op_for_modify(hoid);
     assert(!op.updated_snaps);
     assert(len > 0);
@@ -417,7 +465,8 @@ public:
     uint64_t fromoff,              ///< [in] offset
     uint64_t len,                  ///< [in] len
     uint64_t tooff                 ///< [in] offset
-    ) {
+    )
+  {
     auto &op = get_object_op_for_modify(to);
     assert(!op.updated_snaps);
     op.buffer_updates.insert(
@@ -429,7 +478,8 @@ public:
     const hobject_t &hoid,         ///< [in] object
     uint64_t off,                  ///< [in] offset to start zeroing at
     uint64_t len                   ///< [in] amount to zero
-    ) {
+    )
+  {
     auto &op = get_object_op_for_modify(hoid);
     assert(!op.updated_snaps);
     op.buffer_updates.insert(
@@ -442,17 +492,19 @@ public:
   void omap_setkeys(
     const hobject_t &hoid,         ///< [in] object to write
     bufferlist &keys_bl            ///< [in] encoded map<string, bufferlist>
-    ) {
+    )
+  {
     auto &op = get_object_op_for_modify(hoid);
     op.omap_updates.emplace_back(
       make_pair(
-	ObjectOperation::OmapUpdateType::Insert,
-	keys_bl));
+        ObjectOperation::OmapUpdateType::Insert,
+        keys_bl));
   }
   void omap_setkeys(
     const hobject_t &hoid,         ///< [in] object to write
     map<string, bufferlist> &keys  ///< [in] omap keys, may be cleared
-    ) {
+    )
+  {
     bufferlist bl;
     ::encode(keys, bl);
     omap_setkeys(hoid, bl);
@@ -460,17 +512,19 @@ public:
   void omap_rmkeys(
     const hobject_t &hoid,         ///< [in] object to write
     bufferlist &keys_bl            ///< [in] encode set<string>
-    ) {
+    )
+  {
     auto &op = get_object_op_for_modify(hoid);
     op.omap_updates.emplace_back(
       make_pair(
-	ObjectOperation::OmapUpdateType::Remove,
-	keys_bl));
+        ObjectOperation::OmapUpdateType::Remove,
+        keys_bl));
   }
   void omap_rmkeys(
     const hobject_t &hoid,         ///< [in] object to write
     set<string> &keys              ///< [in] omap keys, may be cleared
-    ) {
+    )
+  {
     bufferlist bl;
     ::encode(keys, bl);
     omap_rmkeys(hoid, bl);
@@ -478,7 +532,8 @@ public:
   void omap_setheader(
     const hobject_t &hoid,         ///< [in] object to write
     bufferlist &header             ///< [in] header
-    ) {
+    )
+  {
     auto &op = get_object_op_for_modify(hoid);
     op.omap_header = header;
   }
@@ -487,11 +542,14 @@ public:
     return op_map.empty();
   }
 
-  uint64_t get_bytes_written() const {
+  uint64_t get_bytes_written() const
+  {
     uint64_t ret = 0;
-    for (auto &&i: op_map) {
-      for (auto &&j: i.second.buffer_updates) {
-	ret += j.get_len();
+    for (auto &&i: op_map)
+    {
+      for (auto &&j: i.second.buffer_updates)
+      {
+        ret += j.get_len();
       }
     }
     return ret;
@@ -499,7 +557,8 @@ public:
 
   void nop(
     const hobject_t &hoid ///< [in] obj to which we are doing nothing
-    ) {
+    )
+  {
     get_object_op_for_modify(hoid);
   }
 
@@ -523,23 +582,29 @@ public:
    * right order, but it actually seems easier to just do the graph construction.
    */
   template <typename T>
-  void safe_create_traverse(T &&t) {
+  void safe_create_traverse(T &&t)
+  {
     map<hobject_t, list<hobject_t>> dgraph;
     list<hobject_t> stack;
 
     // Populate stack with roots, dgraph with edges
-    for (auto &&opair: op_map) {
+    for (auto &&opair: op_map)
+    {
       hobject_t source;
-      if (opair.second.has_source(&source)) {
-	auto &l = dgraph[source];
-	if (l.empty() && !op_map.count(source)) {
-	  /* Source oids not in op_map need to be added as roots
-	   * (but only once!) */
-	  stack.push_back(source);
-	}
-	l.push_back(opair.first);
-      } else {
-	stack.push_back(opair.first);
+      if (opair.second.has_source(&source))
+      {
+        auto &l = dgraph[source];
+        if (l.empty() && !op_map.count(source))
+        {
+          /* Source oids not in op_map need to be added as roots
+           * (but only once!) */
+          stack.push_back(source);
+        }
+        l.push_back(opair.first);
+      }
+      else
+      {
+        stack.push_back(opair.first);
       }
     }
 
@@ -550,22 +615,26 @@ public:
      * depth-first traversal here to ensure we call f on children
      * before parents.
      */
-    while (!stack.empty()) {
+    while (!stack.empty())
+    {
       hobject_t &cur = stack.front();
       auto diter = dgraph.find(cur);
-      if (diter == dgraph.end()) {
-	/* Leaf: pop and call t() */
-	auto opiter = op_map.find(cur);
-	if (opiter != op_map.end())
-	  t(*opiter);
-	stack.pop_front();
-      } else {
-	/* Internal node: push children onto stack, remove edge,
-	 * recurse.  When this node is encountered again, it'll
-	 * be a leaf */
-	assert(!diter->second.empty());
-	stack.splice(stack.begin(), diter->second);
-	dgraph.erase(diter);
+      if (diter == dgraph.end())
+      {
+        /* Leaf: pop and call t() */
+        auto opiter = op_map.find(cur);
+        if (opiter != op_map.end())
+          t(*opiter);
+        stack.pop_front();
+      }
+      else
+      {
+        /* Internal node: push children onto stack, remove edge,
+         * recurse.  When this node is encountered again, it'll
+         * be a leaf */
+        assert(!diter->second.empty());
+        stack.splice(stack.begin(), diter->second);
+        dgraph.erase(diter);
       }
     }
   }
