@@ -192,16 +192,13 @@ class PrimaryLogPG::C_OSD_OndiskWriteUnlock : public Context {
     ObjectContextRef o2 = ObjectContextRef(),
     ObjectContextRef o3 = ObjectContextRef()) : obc(o), obc2(o2), obc3(o3) {}
   void finish(int r) override {
-    dout(7) << __func__ << " Yuanguo: ondisk_write_unlock " << obc.obs.oi << dendl;
     obc->ondisk_write_unlock();
     if (obc2)
     {
-      dout(7) << __func__ << " Yuanguo: ondisk_write_unlock " << obc2.obs.oi << dendl;
       obc2->ondisk_write_unlock();
     }
     if (obc3)
     {
-      dout(7) << __func__ << " Yuanguo: ondisk_write_unlock " << obc3.obs.oi << dendl;
       obc3->ondisk_write_unlock();
     }
   }
@@ -9737,21 +9734,21 @@ void PrimaryLogPG::issue_repop(RepGather *repop, OpContext *ctx)
     }
   }
 
-  dout(7) << __func__ << " Yuanguo: ondisk_write_lock " << ctx->obc.obs.oi << dendl;
+  dout(7) << __func__ << " Yuanguo: ondisk_write_lock " << ctx->obc->obs.oi << dendl;
   ctx->obc->ondisk_write_lock();
 
   bool unlock_snapset_obc = false;
   ctx->op_t->add_obc(ctx->obc);
   if (ctx->clone_obc)
   {
-    dout(7) << __func__ << " Yuanguo: ondisk_write_lock " << ctx->clone_obc.obs.oi << dendl;
+    dout(7) << __func__ << " Yuanguo: ondisk_write_lock " << ctx->clone_obc->obs.oi << dendl;
     ctx->clone_obc->ondisk_write_lock();
     ctx->op_t->add_obc(ctx->clone_obc);
   }
 
   if (ctx->snapset_obc && ctx->snapset_obc->obs.oi.soid != ctx->obc->obs.oi.soid)
   {
-    dout(7) << __func__ << " Yuanguo: ondisk_write_lock " << ctx->snapset_obc.obs.oi << dendl;
+    dout(7) << __func__ << " Yuanguo: ondisk_write_lock " << ctx->snapset_obc->obs.oi << dendl;
     ctx->snapset_obc->ondisk_write_lock();
     unlock_snapset_obc = true;
     ctx->op_t->add_obc(ctx->snapset_obc);
