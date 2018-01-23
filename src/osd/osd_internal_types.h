@@ -42,6 +42,10 @@ typedef ceph::shared_ptr<ObjectContext> ObjectContextRef;
 
 struct ObjectContext
 {
+//Yuanguo: added by yuanguo, for log
+#include "global/global_context.h"
+#define dout_context g_ceph_context
+#define dout_subsys ceph_subsys_osd
   ObjectState obs;
 
   SnapSetContext *ssc;  // may be null
@@ -416,6 +420,8 @@ public:
     writers_waiting--;   //Yuanguo: I am not a waiting writer any more;
     unstable_writes++;   //Yuanguo: I am a writer now;
     lock.Unlock();
+
+    dout(30) << "ondisk_write_lock " << obs.oi << dendl;
   }
 
   void ondisk_write_unlock()
@@ -426,6 +432,8 @@ public:
     if (!unstable_writes && readers_waiting)  //Yuanguo: there is no writer, but there are readers waiting, signal them!
       cond.Signal();
     lock.Unlock();
+
+    dout(30) << "ondisk_write_unlock " << obs.oi << dendl;
   }
 
   void ondisk_read_lock()
@@ -437,6 +445,7 @@ public:
     readers_waiting--;
     readers++;
     lock.Unlock();
+    dout(30) << "ondisk_read_lock " << obs.oi << dendl;
   }
 
   void ondisk_read_unlock()
@@ -447,12 +456,16 @@ public:
     if (!readers && writers_waiting)
       cond.Signal();
     lock.Unlock();
+    dout(30) << "ondisk_read_unlock " << obs.oi << dendl;
   }
 
   /// in-progress copyfrom ops for this object
   bool blocked:1;
   bool requeue_scrub_on_unblock:1;    // true if we need to requeue scrub on unblock
 
+//Yuanguo: added by yuanguo, for log
+#undef dout_context
+#undef dout_subsys
 };
 
 inline ostream& operator<<(ostream& out, const ObjectState& obs)
