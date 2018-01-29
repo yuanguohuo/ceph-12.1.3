@@ -536,7 +536,7 @@ void ReplicatedBackend::submit_transaction(
       )
     ).first->second;
 
-  op.waiting_for_applied.insert(
+  op.waiting_for_applied.insert(    //Yuanguo: op (InProgressOp) is used to record all OSDs who havn't sent applied/committed to me!
     parent->get_actingbackfill_shards().begin(),
     parent->get_actingbackfill_shards().end());
   op.waiting_for_commit.insert(

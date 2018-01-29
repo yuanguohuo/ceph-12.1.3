@@ -3517,7 +3517,7 @@ void PrimaryLogPG::execute_ctx(OpContext *ctx)
   RepGather *repop = new_repop(ctx, obc, rep_tid);
 
   issue_repop(repop, ctx);
-  eval_repop(repop);
+  eval_repop(repop); //Yuanguo: very likely to fail here, no problem, eval_repop will be called twice later (when all replicas committed and replied);
   repop->put();
 }
 
@@ -9754,8 +9754,8 @@ void PrimaryLogPG::issue_repop(RepGather *repop, OpContext *ctx)
     ctx->op_t->add_obc(ctx->snapset_obc);
   }
 
-  Context *on_all_commit = new C_OSD_RepopCommit(this, repop);
-  Context *on_all_applied = new C_OSD_RepopApplied(this, repop);
+  Context *on_all_commit = new C_OSD_RepopCommit(this, repop);    //Yuanguo: will be called when all committed;
+  Context *on_all_applied = new C_OSD_RepopApplied(this, repop);  //Yuanguo: will be called when all applied;
   Context *onapplied_sync = new C_OSD_OndiskWriteUnlock(
     ctx->obc,
     ctx->clone_obc,
