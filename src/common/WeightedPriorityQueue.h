@@ -57,7 +57,7 @@ class WeightedPriorityQueue :  public OpQueue <T, K>
         ListPair(unsigned c, T& i) :
           cost(c),
           item(i)
-          {}
+        {}
     };
 
     //Yuanguo:
@@ -71,7 +71,7 @@ class WeightedPriorityQueue :  public OpQueue <T, K>
         ListPairs lp;
         Klass(K& k) :
           key(k)
-          {}
+        {}
       friend bool operator< (const Klass &a, const Klass &b)
         { return a.key < b.key; }
       friend bool operator> (const Klass &a, const Klass &b)

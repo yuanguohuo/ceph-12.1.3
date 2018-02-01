@@ -3517,7 +3517,7 @@ void PrimaryLogPG::execute_ctx(OpContext *ctx)
   RepGather *repop = new_repop(ctx, obc, rep_tid);
 
   issue_repop(repop, ctx);
-  eval_repop(repop); //Yuanguo: very likely to fail here, no problem, eval_repop will be called twice later (when all replicas committed and replied);
+  eval_repop(repop); //Yuanguo: very likely to fail here, no problem, eval_repop will be called twice later (when all committed and replied the op);
   repop->put();
 }
 

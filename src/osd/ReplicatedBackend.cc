@@ -686,14 +686,14 @@ void ReplicatedBackend::do_repop_reply(OpRequestRef op)
       from,
       r->get_last_complete_ondisk());
 
-    if (ip_op.waiting_for_applied.empty() &&
-        ip_op.on_applied) {
-      ip_op.on_applied->complete(0);
+    if (ip_op.waiting_for_applied.empty() && ip_op.on_applied)
+    {
+      ip_op.on_applied->complete(0);  //Yuanguo: on_applied is C_OSD_RepopApplied, see PrimaryLogPG::issue_repop ---> ReplicatedBackend::submit_transaction
       ip_op.on_applied = 0;
     }
-    if (ip_op.waiting_for_commit.empty() &&
-        ip_op.on_commit) {
-      ip_op.on_commit->complete(0);
+    if (ip_op.waiting_for_commit.empty() && ip_op.on_commit)
+    {
+      ip_op.on_commit->complete(0); //Yuanguo: on_commit is C_OSD_RepopCommit
       ip_op.on_commit= 0;
     }
     if (ip_op.done()) {
