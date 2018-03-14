@@ -73,45 +73,52 @@ public:
 
      * There are really 4 cases:
 
-     * 1) We are modifying an existing object (is_none() &&
-     *    !is_delete())
+     * 1) We are modifying an existing object (is_none() && 
+     *    !is_delete())    
      *    a) If it's an append, we just write into the log entry the old size
      *    b) If it's an actual overwrite, we save the old versions of the
      *       extents being overwritten and write those offsets into the log
      *       entry
-     * 2) We are removing and then recreating an object (!is_none() && is_delete())
+     * 2) We are removing and then recreating an object (!is_none() && is_delete()) 
      *    -- stash
-     * 3) We are removing an object (is_none() && is_delete()) -- stash
-     * 4) We are creating an object (!is_none() && !is_delete()) -- create (no
+     * 3) We are removing an object (is_none() && is_delete()) -- stash          //Yuanguo: can they both be true ???? 
+     * 4) We are creating an object (!is_none() && !is_delete()) -- create (no 
      *    stash)
      *
      * Create, Clone, Rename are the three ways we can recreate it.
      * ECBackend transaction planning needs this context
      * to figure out how to perform the transaction.
      */
+
+
     bool deletes_first() const
     {
       return delete_first;
     }
+
     bool is_delete() const
     {
       return boost::get<Init::None>(&init_type) != nullptr && delete_first;
     }
+
     bool is_none() const
     {
       return boost::get<Init::None>(&init_type) != nullptr && !delete_first;
     }
+
     bool is_fresh_object() const
     {
       return boost::get<Init::None>(&init_type) == nullptr;
     }
+
     bool is_rename() const
     {
       return boost::get<Init::Rename>(&init_type) != nullptr;
     }
+
     bool has_source(hobject_t *source = nullptr) const
     {
-      return match(
+      return match(   // Yuanguo:   match() is defined in common/inline_variant.h  
           init_type,
           [&](const Init::Clone &op) -> bool {
             if (source)

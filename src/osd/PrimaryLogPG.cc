@@ -1660,7 +1660,7 @@ void PrimaryLogPG::do_request(
     return;
   }
 
-  //Yuanguo: op requires osdmap > op->min_epoch, if not, wait for it;
+  //Yuanguo: op requires our osdmap > op->min_epoch, if not, wait for it;
   if (!have_same_or_newer_map(op->min_epoch))
   {
     dout(20) << __func__ << " min " << op->min_epoch
@@ -2254,6 +2254,7 @@ void PrimaryLogPG::do_op(OpRequestRef& op)
   bool in_hit_set = false;
   if (hit_set)
   {
+    dout(10) << __func__ << ": we have hit_set" << dendl;
     if (obc.get())
     {
       if (obc->obs.oi.soid != hobject_t() && hit_set->contains(obc->obs.oi.soid))
@@ -2264,7 +2265,6 @@ void PrimaryLogPG::do_op(OpRequestRef& op)
       if (missing_oid != hobject_t() && hit_set->contains(missing_oid))
         in_hit_set = true;
     }
-
     if (!op->hitset_inserted)
     {
       hit_set->insert(oid);
@@ -2276,9 +2276,9 @@ void PrimaryLogPG::do_op(OpRequestRef& op)
       }
     }
   }
-
   if (agent_state)
   {
+    dout(10) << __func__ << ": we have agent_state" << dendl;
     if (agent_choose_mode(false, op))
       return;
   }
@@ -3475,7 +3475,7 @@ void PrimaryLogPG::execute_ctx(OpContext *ctx)
     record_write_error(op, soid, reply, result);
     return;
   }
-
+  //Yuanguo: in old version (e.g. ceph 10.2.3), there was ctx->register_on_applied() at this point.
   // no need to capture PG ref, repop cancel will handle that
   // Can capture the ctx by pointer, it's owned by the repop
   ctx->register_on_commit(
@@ -3487,7 +3487,7 @@ void PrimaryLogPG::execute_ctx(OpContext *ctx)
       {
         MOSDOpReply *reply = ctx->reply;
         if (reply)
-          ctx->reply = nullptr;
+          ctx->reply = nullptr;  //Yuanguo: we send the reply below, so it's not needed and we can set it NULL here.
         else
         {
           reply = new MOSDOpReply(m, 0, get_osdmap()->get_epoch(), 0, true);
@@ -3517,7 +3517,7 @@ void PrimaryLogPG::execute_ctx(OpContext *ctx)
   RepGather *repop = new_repop(ctx, obc, rep_tid);
 
   issue_repop(repop, ctx);
-  eval_repop(repop); //Yuanguo: very likely to fail here, no problem, eval_repop will be called twice later (when all committed and replied the op);
+  eval_repop(repop); //Yuanguo: very likely to fail here, no problem, eval_repop will be called later (when all committed and/or replied the op);
   repop->put();
 }
 
@@ -9552,7 +9552,7 @@ void PrimaryLogPG::repop_all_committed(RepGather *repop)
   dout(10) << __func__ << ": repop tid " << repop->rep_tid << " all committed "
            << dendl;
   repop->all_committed = true;
-  if (repop->applies_with_commit)
+  if (repop->applies_with_commit)  //Yuanguo: applies_with_commit is false, see  execute_ctx() --> new_repop() --> new RepGather(..., false)
   {
     assert(!repop->all_applied);
     repop->all_applied = true;
@@ -9799,7 +9799,7 @@ PrimaryLogPG::RepGather *PrimaryLogPG::new_repop(
     dout(10) << "new_repop rep_tid " << rep_tid << " (no op)" << dendl;
 
   RepGather *repop = new RepGather(
-    ctx, rep_tid, info.last_complete, false);
+    ctx, rep_tid, info.last_complete, false); //Yuanguo: ctx is moved from, so it cannot be accessed any more, callbacks are moved into repop;
 
   repop->start = ceph_clock_now();
 

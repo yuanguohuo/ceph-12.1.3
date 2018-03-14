@@ -333,8 +333,8 @@ private:
     ceph_tid_t tid;
     set<pg_shard_t> waiting_for_commit;
     set<pg_shard_t> waiting_for_applied;
-    Context *on_commit;
-    Context *on_applied;
+    Context *on_commit;    //Yuanguo: on all commit
+    Context *on_applied;   //Yuanguo: on all applied
     OpRequestRef op;
     eversion_t v;
     InProgressOp(

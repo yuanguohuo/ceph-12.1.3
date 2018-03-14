@@ -346,11 +346,11 @@ public:
 };
 
 void generate_transaction(
-  PGTransactionUPtr &pgt,
+  PGTransactionUPtr &pgt,  //Yuanguo: PG Transaction
   const coll_t &coll,
   bool legacy_log_entries,
   vector<pg_log_entry_t> &log_entries,
-  ObjectStore::Transaction *t,
+  ObjectStore::Transaction *t,  //Yuanguo: ObjectStore Transaction
   set<hobject_t> *added,
   set<hobject_t> *removed)
 {
@@ -516,18 +516,18 @@ void ReplicatedBackend::submit_transaction(
   PGTransactionUPtr t(std::move(_t));
   set<hobject_t> added, removed;
   generate_transaction(
-    t,
+    t,                //Yuanguo: PG Transaction
     coll,
     (get_osdmap()->require_osd_release < CEPH_RELEASE_KRAKEN),
     log_entries,
-    &op_t,
+    &op_t,            //Yuanguo: ObjectStore Transaction
     &added,
     &removed);
   assert(added.size() <= 1);
   assert(removed.size() <= 1);
 
   assert(!in_progress_ops.count(tid));
-  InProgressOp &op = in_progress_ops.insert(
+  InProgressOp &op = in_progress_ops.insert(   //Yuanguo:  put into in_progress_ops, which is map<ceph_tid_t, InProgressOp>
     make_pair(
       tid,
       InProgressOp(
@@ -543,7 +543,7 @@ void ReplicatedBackend::submit_transaction(
     parent->get_actingbackfill_shards().begin(),
     parent->get_actingbackfill_shards().end());
 
-  issue_op(
+  issue_op(        //Yuanguo: send to secondary OSDs;
     soid,
     at_version,
     tid,
