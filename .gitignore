@@ -1,0 +1,8 @@
+.gitignore
+src/.cscope.files
+src/.cscope.out
+src/.cscope.out.in
+src/.cscope.out.po
+src/.filenametags
+src/.tags
+src/rebuild_workspace.sh
