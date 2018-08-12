@@ -597,7 +597,7 @@ void ReplicatedBackend::op_applied(
   parent->op_applied(op->v);
 
   if (op->waiting_for_applied.empty()) {
-    op->on_applied->complete(0);
+    op->on_applied->complete(0);    //Yuanguo: on_applied is the "on all applied" callback C_OSD_RepopApplied
     op->on_applied = 0;
   }
   if (op->done()) {
@@ -620,7 +620,7 @@ void ReplicatedBackend::op_commit(
   op->waiting_for_commit.erase(get_parent()->whoami_shard());
 
   if (op->waiting_for_commit.empty()) {
-    op->on_commit->complete(0);
+    op->on_commit->complete(0);   //Yuanguo: on_commit is the "on all commit" callback C_OSD_RepopCommit
     op->on_commit = 0;
   }
   if (op->done()) {
@@ -680,6 +680,24 @@ void ReplicatedBackend::do_repop_reply(OpRequestRef op)
 	ip_op.op->pg_trace.event("sub_op_applied_rec");
       }
     }
+
+    //Yuanguo: why always remove from waiting_for_applied ????
+    //  Now (in version Luminous), the two replies are merged;
+    //
+    //  Even in the early versions (e.g. version Hammer), secondary OSD may send only 1 reply, the longer story
+    //  is like this: although commit is always before applied, due to concurrency, the sending of commit-reply 
+    //  and applied-reply may occur in different order;
+    //     1. if sending of commit-reply occurs earlier, it will call mark_commit_sent() to set committed=true,
+    //        then, applied-reply will not be sent;
+    //     2. if sending of applied-reply occurs earlier, commit-reply will also be sent;
+    //  check it in early versions: 
+    //     ReplicatedBackend::sub_op_modify_applied() and ReplicatedBackend::sub_op_modify_commit()
+    //  How can we ommit the applied-reply on secondary OSDs?
+    //  I guess: when secondary OSDs commit, it's considered as "applied", the "applied" events of 
+    //  secondary OSDs are not important, because normally (when neither of CEPH_OSD_FLAG_BALANCE_READS  
+    //  nor CEPH_OSD_FLAG_LOCALIZE_READS is set) READ ops are only serviced by the primary OSD;
+    //  Even through those two flags are set, ondisk_read/write lock is able to ensure the read-after-write 
+    //  consistency (ensure the new data is returned, instead of the old data that has been overwritten);
     ip_op.waiting_for_applied.erase(from);
 
     parent->update_peer_last_complete_ondisk(

@@ -930,8 +930,22 @@ void FileJournal::queue_completions_thru(uint64_t seq)
     if (logger) {
       logger->tinc(l_filestore_journal_latency, lat);
     }
-    if (next.finish)
+    if (next.finish)   //Yuanguo: next.finish is C_JournaledAhead, see completion_item;
+    {
+      //Yuanguo: the finisher here is a member of FileJournal, who inherits from class Journal. How
+      //    is it initialized? 
+      //      It's passed here from FileStore, see FileStore::new_journal(); 
+      //      FileStore in turn inherits it from JournalingObjectStore, see 
+      //              FileStore::FileStore() --> 
+      //              JournalingObjectStore::JournalingObjectStore() -->
+      //              finisher(cct, "JournalObjectStore", "fn_jrn_objstore")
+      // so, the 'finisher' here has nothing to do with FileJournal::write_finish_thread (whose body 
+      // is write_finish_thread_entry);
+      //
+      //Yuanguo:
+      // In the 'finisher', next.finish (C_JournaledAhead::complete) is called;
       finisher->queue(next.finish);
+    }
     if (next.tracked_op) {
       next.tracked_op->mark_event("journaled_completion_queued");
       next.tracked_op->journal_trace.event("queued completion");
@@ -940,7 +954,7 @@ void FileJournal::queue_completions_thru(uint64_t seq)
     items.erase(it++);
   }
   batch_unpop_completions(items);
-  finisher_cond.Signal();
+  finisher_cond.Signal();  //Yuanguo: signal flush-threads who are waiting for completions to become empty;
 }
 
 

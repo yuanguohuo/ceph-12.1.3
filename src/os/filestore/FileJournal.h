@@ -46,7 +46,7 @@ public:
   /// Protected by finisher_lock
   struct completion_item {
     uint64_t seq;
-    Context *finish;
+    Context *finish; //Yuanguo: C_JournaledAhead. See FileStore::queue_transactions --> JournalingObjectStore::_op_journal_transactions --> FileJournal::submit_entry
     utime_t start;
     TrackedOpRef tracked_op;
     completion_item(uint64_t o, Context *c, utime_t s, TrackedOpRef opref)

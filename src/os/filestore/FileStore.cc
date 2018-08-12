@@ -2124,7 +2124,7 @@ struct C_JournaledAhead : public Context {
   FileStore *fs;
   FileStore::OpSequencer *osr;
   FileStore::Op *o;
-  Context *ondisk;
+  Context *ondisk;    //Yuanguo: the oncommit callback passed here from PGBackend;
 
   C_JournaledAhead(FileStore *f, FileStore::OpSequencer *os, FileStore::Op *o, Context *ondisk):
     fs(f), osr(os), o(o), ondisk(ondisk) { }
